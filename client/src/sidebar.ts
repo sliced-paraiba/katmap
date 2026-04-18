@@ -490,7 +490,7 @@ export class Sidebar {
       this.listEl.innerHTML = `
         <div class="empty-state">
           Click on the map or use the input above to add waypoints.<br>
-          Drag to reorder. Route calculates automatically.
+          Drag the number to reorder. Route calculates automatically.
         </div>
       `;
       this.sortable?.destroy();
@@ -568,14 +568,14 @@ export class Sidebar {
         });
       });
 
-      // Setup drag-to-reorder
+      // Setup drag-to-reorder — drag by the index number handle,
+      // click everything else (label to edit, buttons to act)
       this.sortable?.destroy();
       this.sortable = Sortable.create(this.listEl, {
         animation: 150,
         ghostClass: "sortable-ghost",
         chosenClass: "sortable-chosen",
-        filter: ".wp-action-btn, .waypoint-remove, .waypoint-label",
-        preventOnFilter: false,
+        handle: ".waypoint-index",
         onEnd: () => {
           const items = this.listEl.querySelectorAll(".waypoint-item");
           const ordered_ids = Array.from(items).map(
@@ -634,6 +634,8 @@ export class Sidebar {
 
   private renderRouteInfo() {
     const route = this.state.route;
+    const live = this.state.liveRoute;
+
     if (!route) {
       if (this.state.waypoints.length >= 2) {
         this.routeInfoEl.innerHTML = `<div class="route-calculating">Calculating route...</div>`;
@@ -647,13 +649,40 @@ export class Sidebar {
       <div class="route-summary">
         ${route.distance_km.toFixed(1)} km &middot; ${Math.round(route.duration_min)} min
       </div>
-      <div class="maneuver-list">
     `;
 
-    for (let legIdx = 0; legIdx < route.legs.length; legIdx++) {
-      const leg = route.legs[legIdx];
+    // Live ETA section — shown when we have a live route result
+    if (live) {
+      const saved = route.duration_min - live.duration_min;
+      const savedPct = route.distance_km > 0
+        ? Math.round((1 - live.distance_km / route.distance_km) * 100)
+        : 0;
+      html += `
+        <div class="live-eta">
+          <div class="live-eta-header">
+            <span class="live-dot"></span>
+            Live ETA
+          </div>
+          <div class="live-eta-stats">
+            <span>${live.distance_km.toFixed(1)} km left</span>
+            <span>&middot;</span>
+            <span>${Math.round(live.duration_min)} min</span>
+            <span>&middot;</span>
+            <span>${live.speed_kmh.toFixed(1)} km/h</span>
+          </div>
+          ${saved > 0.5 ? `<div class="live-eta-saved">${savedPct}% complete, ${Math.round(saved)} min saved</div>` : ""}
+        </div>
+      `;
+    }
 
-      if (route.legs.length > 1) {
+    html += `<div class="maneuver-list">`;
+
+    // Show live route legs if available (from current position), otherwise static route
+    const legsToShow = live ? live.legs : route.legs;
+    for (let legIdx = 0; legIdx < legsToShow.length; legIdx++) {
+      const leg = legsToShow[legIdx];
+
+      if (legsToShow.length > 1) {
         html += `<div class="leg-divider">Leg ${legIdx + 1} &middot; ${leg.distance_km.toFixed(1)} km</div>`;
       }
 
