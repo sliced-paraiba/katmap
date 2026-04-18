@@ -1,0 +1,35 @@
+client/dist
+client/node_modules
+node_modules/
+
+# Rust
+target/
+Cargo.lock
+
+# Nix
+result
+result-*
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Env
+.env
+.env.local
+*.local
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pi/todos
+DEPLOY.md

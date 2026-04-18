@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>KatMap</title>
+    <link rel="icon" id="favicon" type="image/png" href="">
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <div id="app">
+      <div id="sidebar-overlay" class="sidebar-overlay"></div>
+      <div id="sidebar"></div>
+      <div id="map-container">
+        <button id="sidebar-toggle" class="sidebar-toggle-btn" aria-label="Menu">&#9776;</button>
+        <button id="follow-toggle" class="follow-toggle-btn" title="Follow streamer">&#x2316;</button>
+        <div id="user-count" class="user-count-badge" title="Connected users">1</div>
+        <select id="theme-select" class="theme-select" title="Map style">
+          <option value="dark">Dark Matter</option>
+          <option value="light">Positron</option>
+          <option value="bright">OSM Bright</option>
+          <option value="fiord">Fiord Color</option>
+          <option value="toner">Toner</option>
+          <option value="basic">Basic</option>
+          <option value="neon">Neon Night</option>
+          <option value="midnight">Midnight Blue</option>
+          <option value="raster">Raster (OSM)</option>
+        </select>
+      </div>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
