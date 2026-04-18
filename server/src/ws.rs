@@ -77,6 +77,35 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
         }
     }
 
+    // Send live status and last known location (so late-joining clients
+    // see the streamer even if they connected mid-session)
+    {
+        let trail = state.trail.lock().await;
+        if trail.session_active {
+            let msg = ServerMessage::LiveStatus { live: true };
+            if let Ok(json) = serde_json::to_string(&msg) {
+                let _ = sink.send(Message::Text(json.into())).await;
+            }
+            // Send last breadcrumb as a location update
+            if let Some(pt) = trail.points.last() {
+                let loc_msg = ServerMessage::Location {
+                    lat: pt.lat,
+                    lon: pt.lon,
+                    timestamp_ms: trail.last_location_ts,
+                    display_name: Some(state.display_name.clone()),
+                    altitude: pt.altitude,
+                    accuracy: pt.accuracy,
+                    altitude_accuracy: pt.altitude_accuracy,
+                    heading: pt.heading,
+                    speed: pt.speed,
+                };
+                if let Ok(json) = serde_json::to_string(&loc_msg) {
+                    let _ = sink.send(Message::Text(json.into())).await;
+                }
+            }
+        }
+    }
+
     // Subscribe to broadcast channel for server -> client messages
     let mut rx = state.tx.subscribe();
 

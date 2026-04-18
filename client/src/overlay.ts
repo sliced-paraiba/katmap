@@ -1,10 +1,7 @@
 import maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
-import { Protocol } from "pmtiles";
 import { ServerMessage } from "./types";
 import { decodePolyline } from "./polyline";
-
-const TILES_BASE = (window.location.origin ?? "") + "/tiles";
 
 // URL params for OBS configurability
 const params = new URLSearchParams(window.location.search);
@@ -43,41 +40,26 @@ function connect() {
 
 // ── Map ────────────────────────────────────────────────────────────────
 
-const pmProtocol = new Protocol();
-maplibregl.addProtocol("pmtiles", pmProtocol.tile);
-
-const rasterStyle: maplibregl.StyleSpecification = {
-  version: 8,
-  sources: {
-    osm: {
-      type: "raster",
-      tiles: ["https://tile.openstreetmap.org/{z}/{x}/{y}.png"],
-      tileSize: 256,
-    },
-  },
-  layers: [{ id: "osm", type: "raster", source: "osm" }],
-};
-
 const map = new maplibregl.Map({
   container: "map",
-  style: rasterStyle,
+  style: {
+    version: 8,
+    sources: {
+      osm: {
+        type: "raster",
+        tiles: ["https://tile.openstreetmap.org/{z}/{x}/{y}.png"],
+        tileSize: 256,
+      },
+    },
+    layers: [{ id: "osm", type: "raster", source: "osm" }],
+  },
   center: [0, 0],
   zoom,
   interactive: false,
   attributionControl: false,
 });
 
-// Try dark-matter vector tiles, fall back to raster
-(async () => {
-  try {
-    const r = await fetch(`${TILES_BASE}/dark-matter.json`);
-    if (r.ok) {
-      map.setStyle(await r.json());
-    }
-  } catch {
-    // raster fallback is already set
-  }
-})();
+// Always use raster tiles — lightweight and fast for a small overlay
 
 // ── Custom layers (re-added on style.load) ────────────────────────────
 

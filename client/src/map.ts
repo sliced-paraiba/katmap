@@ -551,29 +551,27 @@ export class MapView {
   }
 
   private buildStreamerElement(displayName: string | null, heading: number | null | undefined, speed: number | null | undefined): HTMLElement {
-    const el = document.createElement("div");
-    el.className = "streamer-marker";
+    // Wrapper — no overflow clipping so the arrow can extend outside
+    const wrapper = document.createElement("div");
+    wrapper.className = "streamer-marker";
 
     if (displayName) {
       const avatarUrl = `/api/twitch/avatar/${encodeURIComponent(displayName.toLowerCase())}`;
-      el.style.cssText = `
+      wrapper.style.cssText = `
         width: 40px; height: 40px; border-radius: 50%;
         border: 3px solid #fff;
         box-shadow: 0 0 8px rgba(0,0,0,0.5);
         background: #1a1a2e url("${avatarUrl}") center/cover no-repeat;
-        overflow: hidden;
-        position: relative;
       `;
     } else {
-      el.style.cssText = `
+      wrapper.style.cssText = `
         width: 18px; height: 18px; border-radius: 50%;
         background: #e74c3c; border: 3px solid #fff;
         box-shadow: 0 0 8px rgba(231,76,60,0.6);
-        position: relative;
       `;
     }
 
-    // Heading arrow — positioned above the circle, rotated to indicate direction
+    // Heading arrow — sits outside the circle, rotated to indicate direction
     const arrow = document.createElement("div");
     arrow.className = "streamer-heading-arrow";
     if (heading != null && speed != null && speed > 0) {
@@ -581,9 +579,9 @@ export class MapView {
     } else {
       arrow.style.display = "none";
     }
-    el.appendChild(arrow);
+    wrapper.appendChild(arrow);
 
-    return el;
+    return wrapper;
   }
 
   private updateRouteLine() {
