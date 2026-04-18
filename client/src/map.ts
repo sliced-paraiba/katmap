@@ -515,16 +515,18 @@ export class MapView {
     }
 
     const displayName = loc.display_name ?? null;
+    const heading = loc.heading;
+    const speed = loc.speed;
 
     if (!this.streamerMarker) {
-      const el = this.buildStreamerElement(displayName);
+      const el = this.buildStreamerElement(displayName, heading, speed);
       this.streamerMarker = new maplibregl.Marker({ element: el })
         .setLngLat([loc.lon, loc.lat])
         .addTo(this.map);
       this.streamerAvatarName = displayName;
     } else {
       if (displayName && displayName !== this.streamerAvatarName) {
-        const el = this.buildStreamerElement(displayName);
+        const el = this.buildStreamerElement(displayName, heading, speed);
         this.streamerMarker.remove();
         this.streamerMarker = new maplibregl.Marker({ element: el })
           .setLngLat([loc.lon, loc.lat])
@@ -532,13 +534,26 @@ export class MapView {
         this.streamerAvatarName = displayName;
       } else {
         this.streamerMarker.setLngLat([loc.lon, loc.lat]);
+        this.updateStreamerHeading(heading, speed);
       }
     }
   }
 
-  private buildStreamerElement(displayName: string | null): HTMLElement {
+  private updateStreamerHeading(heading: number | null | undefined, speed: number | null | undefined) {
+    const arrow = this.streamerMarker?.getElement().querySelector(".streamer-heading-arrow") as HTMLElement | null;
+    if (!arrow) return;
+    if (heading != null && speed != null && speed > 0) {
+      arrow.style.display = "block";
+      arrow.style.transform = `rotate(${heading}deg)`;
+    } else {
+      arrow.style.display = "none";
+    }
+  }
+
+  private buildStreamerElement(displayName: string | null, heading: number | null | undefined, speed: number | null | undefined): HTMLElement {
     const el = document.createElement("div");
     el.className = "streamer-marker";
+
     if (displayName) {
       const avatarUrl = `/api/twitch/avatar/${encodeURIComponent(displayName.toLowerCase())}`;
       el.style.cssText = `
@@ -547,14 +562,27 @@ export class MapView {
         box-shadow: 0 0 8px rgba(0,0,0,0.5);
         background: #1a1a2e url("${avatarUrl}") center/cover no-repeat;
         overflow: hidden;
+        position: relative;
       `;
     } else {
       el.style.cssText = `
         width: 18px; height: 18px; border-radius: 50%;
         background: #e74c3c; border: 3px solid #fff;
         box-shadow: 0 0 8px rgba(231,76,60,0.6);
+        position: relative;
       `;
     }
+
+    // Heading arrow — positioned above the circle, rotated to indicate direction
+    const arrow = document.createElement("div");
+    arrow.className = "streamer-heading-arrow";
+    if (heading != null && speed != null && speed > 0) {
+      arrow.style.transform = `rotate(${heading}deg)`;
+    } else {
+      arrow.style.display = "none";
+    }
+    el.appendChild(arrow);
+
     return el;
   }
 
