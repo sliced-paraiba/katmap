@@ -49,6 +49,7 @@ export type ClientMessage =
   | { type: "rename_waypoint"; id: string; label: string }
   | { type: "reorder_waypoints"; ordered_ids: string[] }
   | { type: "request_route" }
+  | { type: "request_live_route" }
   | { type: "delete_all" }
   | { type: "undo" };
 
@@ -62,6 +63,14 @@ export type ServerMessage =
       distance_km: number;
       duration_min: number;
       legs: RouteLeg[];
+    }
+  | {
+      type: "live_route_result";
+      polyline: string;
+      distance_km: number;
+      duration_min: number;
+      legs: RouteLeg[];
+      speed_kmh: number;
     }
   | { type: "error"; message: string }
   | { type: "location"; lat: number; lon: number; timestamp_ms: number; display_name?: string; altitude?: number | null; accuracy?: number | null; altitude_accuracy?: number | null; heading?: number | null; speed?: number | null }

@@ -108,12 +108,26 @@ state.subscribe(() => {
   if (wpJson === lastWaypointJson) return;
   lastWaypointJson = wpJson;
 
-  // Clear stale route immediately
+  // Clear stale routes immediately
   state.clearRoute();
 
   if (state.waypoints.length >= 2) {
     send({ type: "request_route" });
   }
+});
+
+// Throttled live route requests: recalculate from streamer's position every 30s
+const LIVE_ROUTE_INTERVAL = 30_000;
+let lastLiveRouteAt = 0;
+
+state.subscribe(() => {
+  if (!state.location || !state.live || state.waypoints.length === 0) return;
+
+  const now = Date.now();
+  if (now - lastLiveRouteAt < LIVE_ROUTE_INTERVAL) return;
+  lastLiveRouteAt = now;
+
+  send({ type: "request_live_route" });
 });
 
 // Error toast from server messages

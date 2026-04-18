@@ -15,6 +15,15 @@ use uuid::Uuid;
 use crate::companion::TrailAccumulator;
 use crate::types::{ClientMessage, ServerMessage, Waypoint};
 
+/// Last known streamer location pushed by the companion app.
+#[derive(Clone, Default)]
+pub struct LiveLocation {
+    pub lat: f64,
+    pub lon: f64,
+    pub speed: Option<f64>,
+    pub valid: bool,
+}
+
 pub type WaypointState = Arc<RwLock<Vec<Waypoint>>>;
 pub type UndoStack = Arc<RwLock<Vec<Vec<Waypoint>>>>;
 pub type ConnectedCount = Arc<AtomicUsize>;
@@ -43,6 +52,7 @@ pub struct AppState {
     pub history: Option<&'static crate::history::HistoryState>,
     pub social_links: SocialLinks,
     pub trail: Arc<Mutex<TrailAccumulator>>,
+    pub live_location: Arc<RwLock<LiveLocation>>,
 }
 
 pub async fn ws_handler(ws: WebSocketUpgrade, State(state): State<AppState>) -> impl IntoResponse {
@@ -90,12 +100,13 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
     let undo_stack = state.undo_stack.clone();
     let valhalla_url = state.valhalla_url.clone();
     let walking_speed_kmh = state.walking_speed_kmh;
+    let live_location = state.live_location.clone();
     let mut recv_task = tokio::spawn(async move {
         while let Some(Ok(msg)) = stream.next().await {
             match msg {
                 Message::Text(text) => {
                     if let Err(e) =
-                        handle_client_message(&text, &waypoints, &undo_stack, &tx, &valhalla_url, walking_speed_kmh).await
+                        handle_client_message(&text, &waypoints, &undo_stack, &tx, &valhalla_url, walking_speed_kmh, &live_location).await
                     {
                         tracing::warn!("Error handling client message: {e}");
                         let _ = tx.send(ServerMessage::Error {
@@ -127,6 +138,7 @@ async fn handle_client_message(
     tx: &broadcast::Sender<ServerMessage>,
     valhalla_url: &str,
     walking_speed_kmh: f64,
+    live_location: &Arc<RwLock<LiveLocation>>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let client_msg: ClientMessage = serde_json::from_str(text)?;
 
@@ -234,6 +246,51 @@ async fn handle_client_message(
                     Err(e) => {
                         tracing::warn!("Route calculation failed: {e}");
                         let _ = tx.send(ServerMessage::Error { message: e });
+                    }
+                }
+            });
+        }
+        ClientMessage::RequestLiveRoute => {
+            let loc = live_location.read().await;
+            if !loc.valid {
+                return Ok(());
+            }
+            let origin_lat = loc.lat;
+            let origin_lon = loc.lon;
+            // GPS speed is in m/s — convert to km/h; fall back to configured default
+            let speed_kmh = loc.speed.map(|s| s * 3.6).unwrap_or(walking_speed_kmh);
+            drop(loc);
+
+            let wps = waypoints.read().await.clone();
+            if wps.is_empty() {
+                return Ok(());
+            }
+
+            // Build a temporary waypoint list: [current_pos, ...all_waypoints]
+            let mut live_wps = vec![Waypoint {
+                id: Uuid::new_v4(),
+                lat: origin_lat,
+                lon: origin_lon,
+                label: "Live position".into(),
+            }];
+            live_wps.extend(wps);
+
+            let tx = tx.clone();
+            let url = valhalla_url.to_string();
+            tokio::spawn(async move {
+                tracing::info!("Calculating live route from ({}, {}) through {} waypoints at {:.1} km/h", origin_lat, origin_lon, live_wps.len() - 1, speed_kmh);
+                match crate::valhalla::calculate_route(&live_wps, &url, speed_kmh).await {
+                    Ok(result) => {
+                        let _ = tx.send(ServerMessage::LiveRouteResult {
+                            polyline: result.polyline,
+                            distance_km: result.distance_km,
+                            duration_min: result.duration_min,
+                            legs: result.legs,
+                            speed_kmh,
+                        });
+                    }
+                    Err(e) => {
+                        tracing::warn!("Live route calculation failed: {e}");
                     }
                 }
             });

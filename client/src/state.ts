@@ -25,6 +25,14 @@ export class AppState {
     duration_min: number;
     legs: RouteLeg[];
   } | null = null;
+  /** Live route from the streamer's current position through all waypoints. */
+  liveRoute: {
+    polyline: string;
+    distance_km: number;
+    duration_min: number;
+    legs: RouteLeg[];
+    speed_kmh: number;
+  } | null = null;
   connected = false;
   connectedCount = 0;
   /** Whether the companion app session is active */
@@ -80,6 +88,7 @@ export class AppState {
 
   clearRoute() {
     this.route = null;
+    this.liveRoute = null;
     this.notify();
   }
 
@@ -137,6 +146,15 @@ export class AppState {
           distance_km: msg.distance_km,
           duration_min: msg.duration_min,
           legs: msg.legs,
+        };
+        break;
+      case "live_route_result":
+        this.liveRoute = {
+          polyline: msg.polyline,
+          distance_km: msg.distance_km,
+          duration_min: msg.duration_min,
+          legs: msg.legs,
+          speed_kmh: msg.speed_kmh,
         };
         break;
       case "error":

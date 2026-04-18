@@ -148,6 +148,15 @@ pub async fn location_handler(
             };
             let _ = state.tx.send(msg);
 
+            // Update live location for live route requests
+            {
+                let mut loc = state.live_location.write().await;
+                loc.lat = lat;
+                loc.lon = lon;
+                loc.speed = speed;
+                loc.valid = true;
+            }
+
             if coords.len() >= 2 {
                 let _ = state.tx.send(crate::types::ServerMessage::Trail {
                     coords: coords.clone(),

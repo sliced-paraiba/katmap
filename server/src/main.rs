@@ -94,6 +94,7 @@ async fn main() {
         history: Some(history_state),
         social_links,
         trail: Arc::new(Mutex::new(companion::TrailAccumulator::default())),
+        live_location: Arc::new(RwLock::new(ws::LiveLocation::default())),
     };
 
     // Spawn stale session detector

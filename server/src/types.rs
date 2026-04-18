@@ -76,6 +76,9 @@ pub enum ClientMessage {
         ordered_ids: Vec<Uuid>,
     },
     RequestRoute,
+    /// Route from the streamer's current live position through remaining waypoints.
+    /// Uses the actual GPS speed if available, otherwise falls back to WALKING_SPEED_KMH.
+    RequestLiveRoute,
     /// Delete all waypoints (pushes undo entry first)
     DeleteAll,
     /// Undo the last mutating operation
@@ -121,6 +124,16 @@ pub enum ServerMessage {
     /// Session live status (from companion app)
     LiveStatus {
         live: bool,
+    },
+    /// Live route result: routed from streamer's current position through remaining waypoints.
+    /// Uses actual GPS speed. Separate from RouteResult so clients can display both.
+    LiveRouteResult {
+        polyline: String,
+        distance_km: f64,
+        duration_min: f64,
+        legs: Vec<RouteLeg>,
+        /// Current speed used for the calculation (km/h)
+        speed_kmh: f64,
     },
     Error {
         message: String,
