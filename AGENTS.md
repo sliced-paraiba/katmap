@@ -12,7 +12,7 @@ Live at [katmap.awawawa.mov](https://katmap.awawawa.mov).
 
 Read `ARCHITECTURE.md` for the full technical walkthrough. Here's the quick version:
 
-- **Server** (`server/src/`): Rust/Axum. `main.rs` (setup), `ws.rs` (WebSocket + AppState), `companion.rs` (location push + trail accumulation), `twitch.rs` (avatar proxy), `history.rs` (SQLite persistence), `valhalla.rs` (routing proxy), `resolve.rs` (URL resolver), `admin.rs` (history DB CLI).
+- **Server** (`server/src/`): Rust/Axum. `main.rs` (setup), `ws.rs` (WebSocket + AppState), `companion.rs` (location push + ordered trail accumulation), `history.rs` (SQLite persistence + admin editor APIs), `snipe.rs` (private GPS sniping routes), `valhalla.rs` (routing proxy), `resolve.rs` (URL resolver), `admin.rs` (history DB CLI).
 - **Client** (`client/src/`): Vanilla TypeScript + Vite. `main.ts` (entry, wiring, theme persistence), `map.ts` (MapLibre map, themes, markers, context menu), `sidebar.ts` (waypoint list, drag-reorder, route display, history browser), `state.ts` (reactive store), `net.ts` (WebSocket client), `types.ts` (wire protocol types).
 - **No framework**. Direct DOM manipulation. No React/Vue/Svelte.
 
@@ -107,6 +107,10 @@ Location data comes from a companion app that pushes GPS coordinates to `POST /a
 
 **Context menu on mobile**: Desktop uses `contextmenu` event (right-click). Mobile uses a custom long-press handler (500ms touch-hold, cancelled on >10px move). Tap on waypoint markers opens the marker context menu. These are separate code paths in `map.ts`.
 
-**SortableJS filter**: The sidebar drag-reorder uses `filter: ".wp-action-btn, .waypoint-remove, .waypoint-label"` with `preventOnFilter: false` so interactive elements within sortable items work without triggering drag.
+**Breadcrumb trail ordering**: `BreadcrumbPoint` includes `timestamp_ms`; `TrailAccumulator::insert_sorted` sorts by timestamp and rebroadcasts the full trail so out-of-order location packets don't kink the displayed trail.
+
+**History edits**: `/admin/history` stores non-destructive GPS edits in the `trail_edits` JSON column. Original `breadcrumbs` remain unchanged; public `/api/history` applies `hidden_indices` and `moved_points` at read time.
+
+**SortableJS handle**: The sidebar drag-reorder is intentionally limited to the `.waypoint-index` handle. Keep labels/buttons clickable and don't make the full waypoint card draggable unless explicitly requested.
 
 **No waypoint persistence**: There is no database for waypoints. All waypoint and undo state is in-memory on the server. This is a deliberate design choice for a stream-session-scoped tool. Stream history (breadcrumbs) IS persisted.

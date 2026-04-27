@@ -8,10 +8,10 @@ Live at [katmap.awawawa.mov](https://katmap.awawawa.mov).
 
 - **Server**: Rust / Axum, WebSocket-based, authoritative over waypoint state
 - **Client**: Vanilla TypeScript + Vite + MapLibre GL JS (no framework)
-- **Routing**: Valhalla (Docker, pedestrian costing)
+- **Routing**: Valhalla (Docker), pedestrian route planning plus car/cycling/walking stream-sniping routes
 - **Tiles**: Self-hosted PMTiles vector tiles served by Caddy, 8 map themes + raster fallback
 - **Location**: Companion app pushes GPS via REST API (altitude, accuracy, heading, speed)
-- **History**: Stream breadcrumbs persisted to SQLite, browsable in the UI
+- **History**: Stream breadcrumbs persisted to SQLite, browsable in the UI, and editable through an authenticated admin page
 
 ## Prerequisites
 
@@ -43,9 +43,9 @@ katmap/
 │   ├── main.rs          # Axum setup, env vars, static file serving
 │   ├── types.rs         # Serde message types (ClientMessage/ServerMessage)
 │   ├── ws.rs            # WebSocket handler, AppState, undo stack
-│   ├── companion.rs     # Companion app location push, trail accumulation
-│   ├── twitch.rs        # Twitch avatar proxy (OAuth + caching)
-│   ├── history.rs       # SQLite persistence for stream breadcrumbs
+│   ├── companion.rs     # Companion app location push, ordered trail accumulation
+│   ├── history.rs       # SQLite history persistence + authenticated web editor APIs
+│   ├── snipe.rs         # Authenticated stream-sniping GPS route API/page
 │   ├── valhalla.rs      # Valhalla route calculation proxy
 │   ├── resolve.rs       # Google Maps short link resolution
 │   └── admin.rs         # CLI tool for history DB maintenance
@@ -83,9 +83,13 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for a detailed codebase walkthrough.
 | `VALHALLA_URL` | No | Valhalla routing engine URL (default: `http://127.0.0.1:8002`) |
 | `WALKING_SPEED_KMH` | No | Pedestrian speed for route time estimates (default: `5.1`) |
 | `DISPLAY_NAME` | No | Display name broadcast with location updates (default: `streamer`) |
-| `HISTORY_DB_PATH` | No | SQLite database path for stream history (default: `./history.db`) |
-| `TWITCH_CLIENT_ID` | No | Twitch API client ID (enables avatar proxy) |
-| `TWITCH_CLIENT_SECRET` | No | Twitch API client secret (enables avatar proxy) |
+| `HISTORY_DB_PATH` | No | SQLite database path for stream history (default: `/opt/katmap/history.db`) |
+| `AVATAR_PATH` | No | Local image file served by `/api/avatar` (default: `/opt/katmap/avatar.png`) |
+| `ADMIN_API_KEY` | No | Bearer token for `/admin/history`; falls back to `COMPANION_API_KEY` if unset |
+| `SNIPING_API_KEY` | Yes for `/snipe` | Separate bearer token for stream-sniping APIs/page |
+| `SOCIAL_DISCORD` | No | Discord URL; also enables `/discord` redirect |
+| `SOCIAL_KICK` | No | Kick profile URL exposed by `/api/config` |
+| `SOCIAL_TWITCH` | No | Twitch profile URL exposed by `/api/config` |
 | `RUST_LOG` | No | Tracing filter (e.g. `info`, `katmap_server=debug`) |
 
 ## Companion App
@@ -99,7 +103,12 @@ Location data comes from a companion app that pushes GPS coordinates to the serv
 - `heading` — direction in degrees (0° = north, clockwise)
 - `speed` — velocity in meters per second
 
-The server accepts location pushes at `POST /api/location` with `Authorization: Bearer <key>`. Sessions auto-start on the first location push and finalize after 15 minutes of inactivity (stale detection). Active trails are also saved on graceful shutdown.
+The server accepts location pushes at `POST /api/location` with `Authorization: Bearer <key>`. Sessions auto-start on the first location push and finalize after 15 minutes of inactivity (stale detection). Active trails are also saved on graceful shutdown. Points are sorted by their GPS timestamp, so out-of-order packets rebuild and rebroadcast the trail in chronological order.
+
+## Admin / Private Pages
+
+- `/admin/history` — authenticated history editor. It supports CLI-equivalent operations (list, rename, hide/unhide, delete) and non-destructive GPS cleanup. Original breadcrumbs remain in SQLite; hidden/moved point edits are stored separately in `trail_edits` and applied when `/api/history` is read.
+- `/snipe` — authenticated stream-sniping GPS page. Browser GPS is routed to the streamer's current live location via Valhalla, with walking/cycling/car mode toggles. Auth uses `SNIPING_API_KEY`.
 
 ## Theme System
 

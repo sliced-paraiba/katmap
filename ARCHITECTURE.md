@@ -19,6 +19,9 @@ graph TB
         sidebar.ts -->|fetch /api/history| sidebar.ts
     end
 
+    AdminPage["/admin/history"] -->|Bearer admin token| history.rs
+    SnipePage["/snipe"] -->|Bearer sniping token| snipe.rs
+
     net.ts <-->|WebSocket JSON| ws.rs
 
     subgraph Server["Server (Rust/Axum)"]
@@ -26,6 +29,7 @@ graph TB
         companion.rs -->|broadcast| ws.rs
         companion.rs -->|save trails| history.rs
         valhalla.rs -->|RouteResult| ws.rs
+        snipe.rs -->|live destination route| Valhalla
     end
 
     CompanionApp["Companion App"] -->|POST /api/location| companion.rs
@@ -47,6 +51,7 @@ All messages are JSON objects with a `type` discriminator field, using `snake_ca
 | `rename_waypoint` | `id`, `label` | Change a waypoint's label |
 | `reorder_waypoints` | `ordered_ids: string[]` | Reorder the waypoint list |
 | `request_route` | — | Request route calculation via Valhalla |
+| `request_live_route` | — | Request route from streamer live location through waypoints |
 | `delete_all` | — | Delete all waypoints (pushes undo entry) |
 | `undo` | — | Undo the last mutating operation |
 
@@ -57,6 +62,7 @@ All messages are JSON objects with a `type` discriminator field, using `snake_ca
 | `waypoint_list` | `waypoints: Waypoint[]` | Full waypoint state (sent after every mutation + on connect) |
 | `location` | `lat`, `lon`, `timestamp_ms`, `display_name?`, `altitude?`, `accuracy?`, `altitude_accuracy?`, `heading?`, `speed?` | Streamer's live GPS position with full telemetry |
 | `route_result` | `polyline`, `distance_km`, `duration_min`, `legs: RouteLeg[]` | Valhalla route calculation result |
+| `live_route_result` | `polyline`, `distance_km`, `duration_min`, `legs`, `speed_kmh` | Route from streamer live location through waypoints |
 | `error` | `message` | Error message |
 | `trail` | `coords: [number, number][]` | Accumulated breadcrumb trail for history display |
 | `live_status` | `live: boolean` | Whether the companion session is active |
@@ -68,7 +74,7 @@ Waypoint     { id: string, lat: number, lon: number, label: string }
 RouteLeg     { start_waypoint_id, end_waypoint_id, distance_km, duration_min, maneuvers: Maneuver[] }
 Maneuver     { instruction, distance_km, duration_min, maneuver_type: number,
                street_names?: string[], begin_shape_index, end_shape_index }
-BreadcrumbPoint { lon, lat, altitude?, accuracy?, altitude_accuracy?, heading?, speed? }
+BreadcrumbPoint { timestamp_ms, lon, lat, altitude?, accuracy?, altitude_accuracy?, heading?, speed? }
 ```
 
 The `polyline` in `route_result` is Valhalla's **precision-6** encoded polyline (not Google's precision-5). Multi-leg routes are decoded, merged (deduplicating junction points), and re-encoded into a single polyline on the server.
@@ -80,10 +86,12 @@ The `polyline` in `route_result` is Valhalla's **precision-6** encoded polyline 
 Sets up tracing, reads environment variables, creates the shared `AppState`, spawns the stale-session detector, and starts the Axum HTTP server. The server serves:
 - `/ws` — WebSocket endpoint
 - `/api/config` — Server configuration (display name, social links)
-- `/api/twitch/avatar/{login}` — Twitch avatar proxy
+- `/api/avatar` — Local avatar image loaded from `AVATAR_PATH`
 - `/api/location` — Companion app location push (POST, requires API key)
 - `/api/location/status` — Current trail status (GET)
-- `/api/history` — Stream history list (GET)
+- `/api/history` — Public stream history list (GET; applies non-destructive GPS edits)
+- `/admin/history` + `/api/admin/history*` — Authenticated history editor and maintenance APIs
+- `/snipe` + `/api/snipe/*` — Authenticated stream-sniping GPS route page/APIs
 - `/resolve-url` — Google Maps short link resolution
 - `/discord` — Redirect to configured Discord invite
 - Everything else — static files from `../client/dist/` (via `tower_http::services::ServeDir`)
@@ -96,7 +104,6 @@ Sets up tracing, reads environment variables, creates the shared `AppState`, spa
 |---|---|---|
 | `waypoints` | `Arc<RwLock<Vec<Waypoint>>>` | Canonical waypoint list |
 | `undo_stack` | `Arc<RwLock<Vec<Vec<Waypoint>>>>` | Stack of previous waypoint states (max 50) |
-| `last_location` | `Arc<RwLock<Option<ServerMessage>>>` | Cached latest location for bootstrap |
 | `tx` | `broadcast::Sender<ServerMessage>` | Fan-out channel to all WS clients |
 | `connected_count` | `Arc<AtomicUsize>` | Connected client count |
 | `history` | `Option<HistoryState>` | SQLite state for history persistence |
@@ -104,8 +111,9 @@ Sets up tracing, reads environment variables, creates the shared `AppState`, spa
 | `valhalla_url` | `String` | Valhalla routing engine URL |
 | `companion_api_key` | `String` | API key for companion location push |
 | `display_name` | `String` | Display name for location broadcasts |
-| `twitch` | `Option<TwitchState>` | Twitch avatar proxy state |
+| `avatar_path` | `String` | Local image served by `/api/avatar` |
 | `social_links` | `SocialLinks` | Configured social media links |
+| `live_location` | `Arc<RwLock<LiveLocation>>` | Latest valid streamer position for live routing/sniping |
 
 **Connection lifecycle:**
 
@@ -119,6 +127,7 @@ sequenceDiagram
     C->>S: WebSocket connect
     S->>C: waypoint_list (current state)
     S->>C: location (last known, if any)
+    S->>C: trail (accumulated coords, if session active)
 
     A->>S: POST /api/location (lat, lon, altitude, accuracy, heading, speed)
     S->>C: location (with full telemetry)
@@ -157,11 +166,13 @@ Handles location pushes from the companion app and trail accumulation.
 **Location push endpoint** (`POST /api/location`):
 - Accepts `{ type: "location", lat, lon, timestamp_ms?, altitude?, accuracy?, altitude_accuracy?, heading?, speed? }`
 - Validates the `Authorization: Bearer <key>` header against `COMPANION_API_KEY`
-- Stores `BreadcrumbPoint` structs (with full telemetry) in the `TrailAccumulator`
+- Stores `BreadcrumbPoint` structs (timestamp + full telemetry) in the `TrailAccumulator`
+- Inserts points in timestamp order; out-of-order packets trigger a sorted full-trail rebroadcast
 - Broadcasts `ServerMessage::Location` (with telemetry) and `ServerMessage::Trail` (coordinate pairs)
 
 **`TrailAccumulator`** manages the active session:
-- `points: Vec<BreadcrumbPoint>` — accumulated breadcrumb points with telemetry
+- `points: Vec<BreadcrumbPoint>` — accumulated breadcrumb points with timestamped telemetry
+- `insert_sorted()` inserts by timestamp and detects out-of-order arrivals
 - `coords()` helper extracts `[lon, lat]` pairs for the `trail` message
 - Auto-starts a session on first location push
 - `stale_detector` task runs every 60s — if no location for 15 minutes, saves trail to SQLite and resets
@@ -170,16 +181,11 @@ Handles location pushes from the companion app and trail accumulation.
 **Status endpoint** (`GET /api/location/status`):
 - Returns current session state: active, point count, session name, start time
 
-### `twitch.rs` — Twitch Avatar Proxy
+### Avatar and Config
 
-OAuth-based Twitch avatar proxy that caches avatar URLs by login name:
-- Fetches app access tokens using client ID/secret
-- Looks up user avatars via the Twitch Helix API
-- Caches results for 1 hour
-- Only active if both `TWITCH_CLIENT_ID` and `TWITCH_CLIENT_SECRET` are configured
-- Also serves the `/api/config` endpoint with display name and social links
+`main.rs` serves `/api/config` directly and `/api/avatar` from a local file path. The avatar path comes from `AVATAR_PATH` and defaults to `/opt/katmap/avatar.png`. There is no Twitch API dependency in the backend.
 
-### `history.rs` — SQLite Stream History
+### `history.rs` — SQLite Stream History + Web Editor
 
 Stores completed breadcrumb trails with full telemetry:
 
@@ -196,11 +202,35 @@ CREATE TABLE IF NOT EXISTS streams (
     completed       INTEGER NOT NULL DEFAULT 0,
     session_id      TEXT,
     hidden          INTEGER NOT NULL DEFAULT 0,
-    telemetry       TEXT                   -- JSON [BreadcrumbPoint, ...]
+    telemetry       TEXT,                  -- JSON [BreadcrumbPoint, ...]
+    trail_edits     TEXT                   -- JSON { hidden_indices, moved_points }
 );
 ```
 
-The `telemetry` column stores the full `BreadcrumbPoint` array with altitude, accuracy, heading, and speed per point. When a trail goes stale or the server shuts down, the trail is saved here.
+The `telemetry` column stores the full `BreadcrumbPoint` array with timestamp, altitude, accuracy, heading, and speed per point. When a trail goes stale or the server shuts down, the trail is saved here.
+
+The `trail_edits` column stores non-destructive GPS cleanup from `/admin/history`:
+
+```typescript
+TrailEdits {
+  hidden_indices: number[];                 // original point indices omitted from display
+  moved_points: Record<number, [lon, lat]>; // original point index -> replacement coordinate
+}
+```
+
+Public `/api/history` applies these edits when returning entries, while preserving the original `breadcrumbs` JSON.
+
+**Authenticated web editor:** `/admin/history` uses bearer auth (`ADMIN_API_KEY`, falling back to `COMPANION_API_KEY`) and supports listing, renaming, hiding/unhiding, deleting, moving GPS points, hiding GPS points, per-point reset, and discard-all-edits.
+
+### `snipe.rs` — Stream Sniping Routes
+
+Provides an authenticated private GPS page at `/snipe` backed by `/api/snipe/status` and `/api/snipe/route`. Auth uses `SNIPING_API_KEY` only.
+
+- Browser GPS is the route origin
+- Streamer's latest live location is the fixed destination
+- Route recalculates as the browser or streamer moves
+- Valhalla costing modes: `pedestrian`, `bicycle`, `auto` exposed as walking/cycling/car
+- Server-side state is stateless per request, so multiple snipers do not share route state
 
 ### `resolve.rs` — URL Resolution Endpoint
 
@@ -235,7 +265,7 @@ Instantiates and wires together all components:
 - Handles mobile sidebar toggle (hamburger button, overlay, Escape key)
 - Keyboard shortcut: `Ctrl+Z` / `Cmd+Z` sends `{ type: "undo" }`
 - Auto-route: when waypoints change (compared by serializing `[id, lat, lon]`), clears the stale route and sends `request_route` if >= 2 waypoints
-- Dynamic favicon: circular Twitch avatar, fallback teal "K" circle
+- Dynamic favicon: circular `/api/avatar` image, fallback teal "K" circle
 - Toast notification system (error: 5s red, success: 2s green, info: 2s themed)
 
 ### `state.ts` — Reactive Store
@@ -264,8 +294,9 @@ Wraps MapLibre GL JS with all map interaction logic:
 **Layers**:
 - Route polyline: GeoJSON `LineString` source, teal color (`#0f9b8e`), decoded from Valhalla precision-6 polyline
 - Waypoint markers: MapLibre `Marker` instances (numbered teal circles), draggable — `dragend` sends `move_waypoint`
-- Streamer marker: avatar in a 40px circle, or a red dot fallback
-- History trail: blue dashed polyline (`#4444ff`, `line-dasharray: [2, 2]`) displaying the accumulated breadcrumb trail from `trail` messages
+- Streamer marker: avatar from `/api/avatar` in a 40px circle, or a red dot fallback
+- Live breadcrumb trail: warm gradient line with dark casing and start/end endpoint dots
+- History trail: cold gradient line with dark casing and start/end endpoint dots
 
 **Interactions**:
 - Right-click on map: context menu with "Add waypoint here" (reverse geocoded label via Nominatim), "Open in Google Maps"
