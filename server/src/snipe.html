@@ -21,8 +21,8 @@
     #map { min-height:0; width:100%; height:100%; }
     #panel { position:absolute; z-index:1; right:12px; bottom:12px; width:min(420px, calc(100vw - 24px)); max-height:42vh; overflow:auto; background:#0f172add; border:1px solid #334155; border-radius:12px; backdrop-filter:blur(10px); box-shadow:0 10px 30px #0008; }
     #summary { padding:12px; font-weight:700; border-bottom:1px solid #334155; }
-    #steps { padding:6px 12px 12px; margin:0; }
-    #steps li { margin:8px 0; color:#cbd5e1; font-size:13px; }
+    #steps { padding:8px 16px 14px 36px; margin:0; }
+    #steps li { margin:8px 0; color:#cbd5e1; font-size:13px; padding-left:4px; }
     .hint { color:#94a3b8; font-size:12px; }
     .marker { width:20px; height:20px; border-radius:50%; border:3px solid #fff; box-shadow:0 0 10px #000; }
     .user { background:#2563eb; }
@@ -63,6 +63,7 @@ let userMarker = null, streamerMarker = null, routeTimer = null, follow = true, 
 
 const map = new maplibregl.Map({
   container: 'map',
+  attributionControl: false,
   style: {
     version: 8,
     sources: { osm: { type:'raster', tiles:['https://tile.openstreetmap.org/{z}/{x}/{y}.png'], tileSize:256, attribution:'© OpenStreetMap contributors' } },
@@ -71,6 +72,7 @@ const map = new maplibregl.Map({
   center: [-122.3321, 47.6062], zoom: 13
 });
 map.addControl(new maplibregl.NavigationControl());
+map.addControl(new maplibregl.AttributionControl({ compact: true }), 'bottom-left');
 map.on('load', () => {
   map.addSource('route', { type:'geojson', data: emptyFc() });
   map.addLayer({ id:'route-casing', type:'line', source:'route', layout:{'line-join':'round','line-cap':'round'}, paint:{'line-color':'#020617','line-width':8,'line-opacity':0.7} });
