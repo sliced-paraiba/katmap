@@ -90,7 +90,7 @@ function addCustomLayers() {
       type: "line",
       source: "trail",
       layout: { "line-join": "round", "line-cap": "round" },
-      paint: { "line-gradient": trailGradientExpression(), "line-width": 4, "line-opacity": 0.95 },
+      paint: { "line-gradient": warmGradientExpression(), "line-width": 4, "line-opacity": 0.95 },
     });
   }
 
@@ -236,30 +236,28 @@ function updateTrailLayer() {
     properties: {},
     geometry: { type: "LineString", coordinates: trailCoords },
   });
-  endpointSrc?.setData(trailEndpointFeatureCollection(trailCoords));
+  endpointSrc?.setData(warmEndpointFeatureCollection(trailCoords));
 }
 
-function trailGradientExpression(): maplibregl.ExpressionSpecification {
+function warmGradientExpression(): maplibregl.ExpressionSpecification {
   return [
     "interpolate",
     ["linear"],
     ["line-progress"],
     0,
-    "#2563eb",
-    0.2,
-    "#06b6d4",
-    0.4,
-    "#22c55e",
-    0.6,
-    "#facc15",
-    0.8,
+    "#fbbf24",
+    0.3,
     "#f97316",
-    1,
+    0.6,
     "#ef4444",
+    0.85,
+    "#dc2626",
+    1,
+    "#991b1b",
   ] as maplibregl.ExpressionSpecification;
 }
 
-function trailEndpointFeatureCollection(coords: [number, number][]) {
+function warmEndpointFeatureCollection(coords: [number, number][]) {
   const start = coords[0];
   const end = coords[coords.length - 1];
 
@@ -268,12 +266,12 @@ function trailEndpointFeatureCollection(coords: [number, number][]) {
     features: [
       {
         type: "Feature" as const,
-        properties: { kind: "start", color: "#2563eb" },
+        properties: { kind: "start", color: "#fbbf24" },
         geometry: { type: "Point" as const, coordinates: start },
       },
       {
         type: "Feature" as const,
-        properties: { kind: "end", color: "#ef4444" },
+        properties: { kind: "end", color: "#991b1b" },
         geometry: { type: "Point" as const, coordinates: end },
       },
     ],

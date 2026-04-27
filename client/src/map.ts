@@ -224,7 +224,7 @@ export class MapView {
         source: "breadcrumbs",
         layout: { "line-join": "round", "line-cap": "round" },
         paint: {
-          "line-gradient": trailGradientExpression(),
+          "line-gradient": warmGradientExpression(),
           "line-width": 4,
           "line-opacity": 0.95,
         },
@@ -265,7 +265,21 @@ export class MapView {
     if (!this.map.getSource("history-trail")) {
       this.map.addSource("history-trail", {
         type: "geojson",
+        lineMetrics: true,
         data: { type: "FeatureCollection", features: [] },
+      });
+    }
+    if (!this.map.getLayer("history-trail-line-casing")) {
+      this.map.addLayer({
+        id: "history-trail-line-casing",
+        type: "line",
+        source: "history-trail",
+        layout: { "line-join": "round", "line-cap": "round" },
+        paint: {
+          "line-color": "#111827",
+          "line-width": 7,
+          "line-opacity": 0.35,
+        },
       });
     }
     if (!this.map.getLayer("history-trail-line")) {
@@ -275,10 +289,40 @@ export class MapView {
         source: "history-trail",
         layout: { "line-join": "round", "line-cap": "round" },
         paint: {
-          "line-color": "#3b82f6",
-          "line-width": 3,
-          "line-opacity": 0.75,
-          "line-dasharray": [2, 1],
+          "line-gradient": coldGradientExpression(),
+          "line-width": 4,
+          "line-opacity": 0.85,
+        },
+      });
+    }
+    if (!this.map.getSource("history-trail-endpoints")) {
+      this.map.addSource("history-trail-endpoints", {
+        type: "geojson",
+        data: { type: "FeatureCollection", features: [] },
+      });
+    }
+    if (!this.map.getLayer("history-trail-endpoint-halo")) {
+      this.map.addLayer({
+        id: "history-trail-endpoint-halo",
+        type: "circle",
+        source: "history-trail-endpoints",
+        paint: {
+          "circle-color": "#ffffff",
+          "circle-radius": 7,
+          "circle-opacity": 0.9,
+        },
+      });
+    }
+    if (!this.map.getLayer("history-trail-endpoint")) {
+      this.map.addLayer({
+        id: "history-trail-endpoint",
+        type: "circle",
+        source: "history-trail-endpoints",
+        paint: {
+          "circle-color": ["get", "color"],
+          "circle-radius": ["case", ["==", ["get", "kind"], "end"], 5, 4],
+          "circle-stroke-color": "#111827",
+          "circle-stroke-width": 1.5,
         },
       });
     }
@@ -303,7 +347,9 @@ export class MapView {
       });
     }
 
-    // Keep breadcrumb endpoint dots above route/history lines so start/end stay visible.
+    // Keep endpoint dots above route lines so start/end stay visible.
+    if (this.map.getLayer("history-trail-endpoint-halo")) this.map.moveLayer("history-trail-endpoint-halo");
+    if (this.map.getLayer("history-trail-endpoint")) this.map.moveLayer("history-trail-endpoint");
     if (this.map.getLayer("breadcrumb-endpoint-halo")) this.map.moveLayer("breadcrumb-endpoint-halo");
     if (this.map.getLayer("breadcrumb-endpoint")) this.map.moveLayer("breadcrumb-endpoint");
 
@@ -665,9 +711,11 @@ export class MapView {
   private updateHistoryTrail() {
     if (!this.map.getSource("history-trail")) return;
     const source = this.map.getSource("history-trail") as maplibregl.GeoJSONSource;
+    const endpointSource = this.map.getSource("history-trail-endpoints") as maplibregl.GeoJSONSource | undefined;
     const coords = this.state.historyTrail;
     if (coords.length < 2) {
       source.setData({ type: "FeatureCollection", features: [] });
+      endpointSource?.setData({ type: "FeatureCollection", features: [] });
       return;
     }
     source.setData({
@@ -675,6 +723,7 @@ export class MapView {
       properties: {},
       geometry: { type: "LineString", coordinates: coords },
     });
+    endpointSource?.setData(coldEndpointFeatureCollection(coords));
   }
 
   getMap(): maplibregl.Map {
@@ -705,23 +754,39 @@ export async function reverseGeocode(lat: number, lon: number): Promise<string |
   }
 }
 
-function trailGradientExpression(): maplibregl.ExpressionSpecification {
+function warmGradientExpression(): maplibregl.ExpressionSpecification {
   return [
     "interpolate",
     ["linear"],
     ["line-progress"],
     0,
-    "#2563eb", // start: blue
-    0.2,
-    "#06b6d4",
-    0.4,
-    "#22c55e",
+    "#fbbf24", // amber
+    0.3,
+    "#f97316", // orange
     0.6,
-    "#facc15",
-    0.8,
-    "#f97316",
+    "#ef4444", // red
+    0.85,
+    "#dc2626", // darker red
     1,
-    "#ef4444", // end: red
+    "#991b1b", // deep red
+  ] as maplibregl.ExpressionSpecification;
+}
+
+function coldGradientExpression(): maplibregl.ExpressionSpecification {
+  return [
+    "interpolate",
+    ["linear"],
+    ["line-progress"],
+    0,
+    "#60a5fa", // light blue
+    0.3,
+    "#3b82f6", // blue
+    0.6,
+    "#6366f1", // indigo
+    0.85,
+    "#7c3aed", // violet
+    1,
+    "#581c87", // deep purple
   ] as maplibregl.ExpressionSpecification;
 }
 
@@ -734,12 +799,33 @@ function trailEndpointFeatureCollection(coords: [number, number][]) {
     features: [
       {
         type: "Feature" as const,
-        properties: { kind: "start", color: "#2563eb" },
+        properties: { kind: "start", color: "#fbbf24" },
         geometry: { type: "Point" as const, coordinates: start },
       },
       {
         type: "Feature" as const,
-        properties: { kind: "end", color: "#ef4444" },
+        properties: { kind: "end", color: "#991b1b" },
+        geometry: { type: "Point" as const, coordinates: end },
+      },
+    ],
+  };
+}
+
+function coldEndpointFeatureCollection(coords: [number, number][]) {
+  const start = coords[0];
+  const end = coords[coords.length - 1];
+
+  return {
+    type: "FeatureCollection" as const,
+    features: [
+      {
+        type: "Feature" as const,
+        properties: { kind: "start", color: "#60a5fa" },
+        geometry: { type: "Point" as const, coordinates: start },
+      },
+      {
+        type: "Feature" as const,
+        properties: { kind: "end", color: "#581c87" },
         geometry: { type: "Point" as const, coordinates: end },
       },
     ],
