@@ -157,7 +157,7 @@ function drawFallbackFavicon() {
   faviconEl.href = canvas.toDataURL("image/png");
 }
 
-function updateFavicon(displayName: string) {
+function updateFavicon() {
   const canvas = document.createElement("canvas");
   canvas.width = 32;
   canvas.height = 32;
@@ -180,7 +180,7 @@ function updateFavicon(displayName: string) {
     faviconEl.href = canvas.toDataURL("image/png");
   };
   img.onerror = () => drawFallbackFavicon();
-  img.src = `/api/twitch/avatar/${encodeURIComponent(displayName.toLowerCase())}`;
+  img.src = `/api/avatar`;
 }
 
 // --- Connected users counter ---
@@ -201,7 +201,7 @@ drawFallbackFavicon();
     const cfg = await resp.json() as { display_name: string; social?: { discord?: string | null; kick?: string | null; twitch?: string | null } };
 
     if (cfg.display_name) {
-      updateFavicon(cfg.display_name);
+      updateFavicon();
     }
 
     state.socialLinks = {

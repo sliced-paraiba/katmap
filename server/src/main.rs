@@ -1,7 +1,6 @@
 mod companion;
 mod history;
 mod resolve;
-mod twitch;
 mod types;
 mod valhalla;
 mod ws;
@@ -13,6 +12,7 @@ use axum::http::StatusCode;
 use axum::response::{IntoResponse, Redirect};
 use axum::Router;
 use axum::routing::{get, post};
+use axum::extract::State as AxumState;
 use tokio::sync::{Mutex, RwLock, broadcast};
 use tower_http::services::ServeDir;
 use tower_http::cors::{CorsLayer, Any};
@@ -51,19 +51,9 @@ async fn main() {
         .unwrap_or_else(|_| "streamer".to_string());
     tracing::info!("Display name: {display_name}");
 
-    let twitch = match (
-        std::env::var("TWITCH_CLIENT_ID"),
-        std::env::var("TWITCH_CLIENT_SECRET"),
-    ) {
-        (Ok(id), Ok(secret)) if !id.is_empty() && !secret.is_empty() => {
-            tracing::info!("Twitch avatar proxy enabled (client_id={}...)", &id[..8.min(id.len())]);
-            Some(twitch::TwitchState::new(id, secret))
-        }
-        _ => {
-            tracing::warn!("TWITCH_CLIENT_ID / TWITCH_CLIENT_SECRET not set — avatar proxy disabled");
-            None
-        }
-    };
+    let avatar_path = std::env::var("AVATAR_PATH")
+        .unwrap_or_else(|_| "/opt/katmap/avatar.png".to_string());
+    tracing::info!("Avatar path: {avatar_path}");
 
     // Social links — only non-empty values are included
     let social_links = SocialLinks {
@@ -90,7 +80,7 @@ async fn main() {
         walking_speed_kmh,
         companion_api_key,
         display_name,
-        twitch,
+        avatar_path: avatar_path.clone(),
         history: Some(history_state),
         social_links,
         trail: Arc::new(Mutex::new(companion::TrailAccumulator::default())),
@@ -108,8 +98,8 @@ async fn main() {
 
     let app = Router::new()
         .route("/ws", get(ws_handler))
-        .route("/api/config", get(twitch::config_handler))
-        .route("/api/twitch/avatar/{login}", get(twitch::avatar_handler))
+        .route("/api/config", get(config_handler))
+        .route("/api/avatar", get(avatar_handler))
         .route("/api/location", post(companion::location_handler))
         .route("/api/location/status", get(companion::status_handler))
         .route("/api/history", get(history::list_history_handler))
@@ -140,4 +130,51 @@ async fn main() {
     });
 
     axum::serve(listener, app).await.unwrap();
+}
+
+async fn config_handler(AxumState(state): AxumState<AppState>) -> impl IntoResponse {
+    axum::Json(serde_json::json!({
+        "display_name": state.display_name,
+        "social": {
+            "discord": state.social_links.discord,
+            "kick": state.social_links.kick,
+            "twitch": state.social_links.twitch,
+        },
+    }))
+}
+
+async fn avatar_handler(AxumState(state): AxumState<AppState>) -> impl IntoResponse {
+    match tokio::fs::read(&state.avatar_path).await {
+        Ok(bytes) => {
+            let content_type = infer_content_type(&state.avatar_path, &bytes);
+            (
+                StatusCode::OK,
+                [(axum::http::header::CONTENT_TYPE, content_type)],
+                axum::body::Body::from(bytes),
+            ).into_response()
+        }
+        Err(e) => {
+            tracing::warn!("Failed to read avatar {}: {e}", state.avatar_path);
+            (StatusCode::NOT_FOUND, "Avatar not found").into_response()
+        }
+    }
+}
+
+fn infer_content_type(path: &str, bytes: &[u8]) -> String {
+    // Try by extension first, fall back to magic bytes
+    match path.rsplit('.').next() {
+        Some("png") => "image/png".to_string(),
+        Some("jpg") | Some("jpeg") => "image/jpeg".to_string(),
+        Some("gif") => "image/gif".to_string(),
+        Some("webp") => "image/webp".to_string(),
+        Some("svg") => "image/svg+xml".to_string(),
+        _ => {
+            // Magic byte fallback
+            if bytes.starts_with(b"\x89PNG") { "image/png".to_string() }
+            else if bytes.starts_with(b"\xff\xd8\xff") { "image/jpeg".to_string() }
+            else if bytes.starts_with(b"GIF8") { "image/gif".to_string() }
+            else if bytes.starts_with(b"RIFF") && bytes.len() > 11 && &bytes[8..12] == b"WEBP" { "image/webp".to_string() }
+            else { "application/octet-stream".to_string() }
+        }
+    }
 }

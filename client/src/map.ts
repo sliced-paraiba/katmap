@@ -67,7 +67,6 @@ export class MapView {
   private map: maplibregl.Map;
   private markers: Map<string, maplibregl.Marker> = new Map();
   private streamerMarker: maplibregl.Marker | null = null;
-  private streamerAvatarName: string | null = null;
   private onSend: (msg: ClientMessage) => void;
   private state: AppState;
   private hasCenteredOnStreamer = false;
@@ -572,19 +571,9 @@ export class MapView {
       this.streamerMarker = new maplibregl.Marker({ element: el })
         .setLngLat([loc.lon, loc.lat])
         .addTo(this.map);
-      this.streamerAvatarName = displayName;
     } else {
-      if (displayName && displayName !== this.streamerAvatarName) {
-        const el = this.buildStreamerElement(displayName, heading, speed);
-        this.streamerMarker.remove();
-        this.streamerMarker = new maplibregl.Marker({ element: el })
-          .setLngLat([loc.lon, loc.lat])
-          .addTo(this.map);
-        this.streamerAvatarName = displayName;
-      } else {
-        this.streamerMarker.setLngLat([loc.lon, loc.lat]);
-        this.updateStreamerHeading(heading, speed);
-      }
+      this.streamerMarker.setLngLat([loc.lon, loc.lat]);
+      this.updateStreamerHeading(heading, speed);
     }
   }
 
@@ -605,7 +594,7 @@ export class MapView {
     wrapper.className = "streamer-marker";
 
     if (displayName) {
-      const avatarUrl = `/api/twitch/avatar/${encodeURIComponent(displayName.toLowerCase())}`;
+      const avatarUrl = `/api/avatar`;
       wrapper.style.cssText = `
         width: 40px; height: 40px; border-radius: 50%;
         border: 3px solid #fff;

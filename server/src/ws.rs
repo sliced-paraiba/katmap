@@ -48,7 +48,7 @@ pub struct AppState {
     pub walking_speed_kmh: f64,
     pub companion_api_key: String,
     pub display_name: String,
-    pub twitch: Option<crate::twitch::TwitchState>,
+    pub avatar_path: String,
     pub history: Option<&'static crate::history::HistoryState>,
     pub social_links: SocialLinks,
     pub trail: Arc<Mutex<TrailAccumulator>>,
