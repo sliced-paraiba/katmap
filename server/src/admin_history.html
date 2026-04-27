@@ -80,7 +80,9 @@ map.on('load', () => {
   map.addSource('trail', { type:'geojson', lineMetrics:true, data: emptyFc() });
   map.addLayer({ id:'trail-casing', type:'line', source:'trail', layout:{'line-join':'round','line-cap':'round'}, paint:{'line-color':'#111827','line-width':7,'line-opacity':0.45} });
   map.addLayer({ id:'trail-line', type:'line', source:'trail', layout:{'line-join':'round','line-cap':'round'}, paint:{'line-gradient':['interpolate',['linear'],['line-progress'],0,'#60a5fa',0.3,'#3b82f6',0.6,'#6366f1',0.85,'#7c3aed',1,'#581c87'],'line-width':4,'line-opacity':0.9} });
+  requestAnimationFrame(() => { map.resize(); renderMap({ fit: true }); });
 });
+window.addEventListener('resize', () => map.resize());
 function emptyFc(){ return { type:'FeatureCollection', features:[] }; }
 function authHeaders(){ return { Authorization: `Bearer ${tokenEl.value}`, 'Content-Type':'application/json' }; }
 async function api(url, opts={}) {
@@ -112,9 +114,9 @@ function selectEntry(id){
   current = entries.find(e => e.id === id); selectedIndex = null;
   $('name').value = current.session_id || '';
   $('toggle-hide').textContent = current.hidden ? 'Unhide entry' : 'Hide entry';
-  renderList(); renderMap();
+  renderList(); renderMap({ fit: true });
 }
-function renderMap(){
+function renderMap({ fit = false } = {}){
   markers.forEach(m => m.remove()); markers = [];
   if (!current || !map.getSource('trail')) return;
   const visible = editedPoints(current);
@@ -131,9 +133,12 @@ function renderMap(){
     marker.on('dragend', () => { const ll = marker.getLngLat(); current.edits.moved_points[idx] = [ll.lng, ll.lat]; renderMap(); });
     markers.push(marker);
   });
-  if (coords.length) {
+  if (fit && coords.length) {
     const bounds = coords.reduce((b,c)=>b.extend(c), new maplibregl.LngLatBounds(coords[0], coords[0]));
-    map.fitBounds(bounds, { padding: 60, maxZoom: 16 });
+    requestAnimationFrame(() => {
+      map.resize();
+      map.fitBounds(bounds, { padding: { top: 70, right: 70, bottom: 70, left: 70 }, maxZoom: 16, duration: 0 });
+    });
   }
 }
 function needPoint(){ if (selectedIndex == null) { alert('Select a point first'); return false; } return true; }
