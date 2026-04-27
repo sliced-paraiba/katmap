@@ -103,6 +103,14 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                     let _ = sink.send(Message::Text(json.into())).await;
                 }
             }
+            // Send accumulated trail so late-joining clients see the breadcrumb line
+            let coords = trail.coords();
+            if coords.len() >= 2 {
+                let trail_msg = ServerMessage::Trail { coords };
+                if let Ok(json) = serde_json::to_string(&trail_msg) {
+                    let _ = sink.send(Message::Text(json.into())).await;
+                }
+            }
         }
     }
 
