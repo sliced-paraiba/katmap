@@ -13,6 +13,9 @@ pub struct Waypoint {
 /// Stored in the trail accumulator and persisted to SQLite telemetry column.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BreadcrumbPoint {
+    /// GPS timestamp in milliseconds — used to sort out-of-order arrivals.
+    #[serde(default)]
+    pub timestamp_ms: i64,
     pub lon: f64,
     pub lat: f64,
     #[serde(default, skip_serializing_if = "Option::is_none")]

@@ -55,6 +55,21 @@ impl TrailAccumulator {
         self.points.iter().map(|p| [p.lon, p.lat]).collect()
     }
 
+    /// Insert a point and sort by timestamp. Returns `true` if the point
+    /// arrived out of order (i.e. sorting changed the tail of the array).
+    pub fn insert_sorted(&mut self, point: BreadcrumbPoint) -> bool {
+        let ts = point.timestamp_ms;
+        let was_tail = self
+            .points
+            .last()
+            .map_or(true, |last| ts >= last.timestamp_ms);
+
+        self.points.push(point);
+        self.points.sort_by_key(|p| p.timestamp_ms);
+
+        !was_tail
+    }
+
     fn reset(&mut self) {
         self.points.clear();
         self.started_at = 0;
@@ -114,7 +129,8 @@ pub async fn location_handler(
 
                 let ts = timestamp_ms.unwrap_or_else(|| chrono::Utc::now().timestamp_millis());
 
-                trail.points.push(BreadcrumbPoint {
+                let out_of_order = trail.insert_sorted(BreadcrumbPoint {
+                    timestamp_ms: ts,
                     lon,
                     lat,
                     altitude,
@@ -123,6 +139,13 @@ pub async fn location_handler(
                     heading,
                     speed,
                 });
+
+                if out_of_order {
+                    tracing::info!(
+                        "companion: out-of-order point detected (ts={}), trail re-sorted",
+                        ts
+                    );
+                }
 
                 trail.last_location_ts = ts;
                 trail.last_push_at = Some(Instant::now());
