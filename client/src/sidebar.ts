@@ -490,7 +490,7 @@ export class Sidebar {
       this.listEl.innerHTML = `
         <div class="empty-state">
           Click on the map or use the input above to add waypoints.<br>
-          Drag the number to reorder. Route calculates automatically.
+          Drag waypoints to reorder. Route calculates automatically.
         </div>
       `;
       this.sortable?.destroy();
@@ -568,13 +568,14 @@ export class Sidebar {
         });
       });
 
-      // Setup drag-to-reorder — drag by the index number handle,
-      // click everything else (label to edit, buttons to act)
+      // Setup drag-to-reorder — drag by the left number/handle region,
+      // click everything else (label to edit, buttons to act).
       this.sortable?.destroy();
       this.sortable = Sortable.create(this.listEl, {
         animation: 150,
         ghostClass: "sortable-ghost",
         chosenClass: "sortable-chosen",
+        dragClass: "sortable-drag",
         handle: ".waypoint-index",
         onEnd: () => {
           const items = this.listEl.querySelectorAll(".waypoint-item");
