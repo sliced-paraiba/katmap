@@ -201,7 +201,21 @@ export class MapView {
     if (!this.map.getSource("breadcrumbs")) {
       this.map.addSource("breadcrumbs", {
         type: "geojson",
+        lineMetrics: true,
         data: { type: "FeatureCollection", features: [] },
+      });
+    }
+    if (!this.map.getLayer("breadcrumb-line-casing")) {
+      this.map.addLayer({
+        id: "breadcrumb-line-casing",
+        type: "line",
+        source: "breadcrumbs",
+        layout: { "line-join": "round", "line-cap": "round" },
+        paint: {
+          "line-color": "#111827",
+          "line-width": 7,
+          "line-opacity": 0.45,
+        },
       });
     }
     if (!this.map.getLayer("breadcrumb-line")) {
@@ -211,9 +225,40 @@ export class MapView {
         source: "breadcrumbs",
         layout: { "line-join": "round", "line-cap": "round" },
         paint: {
-          "line-color": "#FF6B00",
-          "line-width": 2,
-          "line-opacity": 0.65,
+          "line-gradient": trailGradientExpression(),
+          "line-width": 4,
+          "line-opacity": 0.95,
+        },
+      });
+    }
+    if (!this.map.getSource("breadcrumb-endpoints")) {
+      this.map.addSource("breadcrumb-endpoints", {
+        type: "geojson",
+        data: { type: "FeatureCollection", features: [] },
+      });
+    }
+    if (!this.map.getLayer("breadcrumb-endpoint-halo")) {
+      this.map.addLayer({
+        id: "breadcrumb-endpoint-halo",
+        type: "circle",
+        source: "breadcrumb-endpoints",
+        paint: {
+          "circle-color": "#ffffff",
+          "circle-radius": ["case", ["==", ["get", "kind"], "end"], 9, 8],
+          "circle-opacity": 0.9,
+        },
+      });
+    }
+    if (!this.map.getLayer("breadcrumb-endpoint")) {
+      this.map.addLayer({
+        id: "breadcrumb-endpoint",
+        type: "circle",
+        source: "breadcrumb-endpoints",
+        paint: {
+          "circle-color": ["get", "color"],
+          "circle-radius": ["case", ["==", ["get", "kind"], "end"], 6, 5],
+          "circle-stroke-color": "#111827",
+          "circle-stroke-width": 1.5,
         },
       });
     }
@@ -258,6 +303,10 @@ export class MapView {
         },
       });
     }
+
+    // Keep breadcrumb endpoint dots above route/history lines so start/end stay visible.
+    if (this.map.getLayer("breadcrumb-endpoint-halo")) this.map.moveLayer("breadcrumb-endpoint-halo");
+    if (this.map.getLayer("breadcrumb-endpoint")) this.map.moveLayer("breadcrumb-endpoint");
 
     // Re-populate from state in case data arrived before this style loaded
     this.updateRouteLine();
@@ -608,10 +657,12 @@ export class MapView {
       return;
     }
     const source = this.map.getSource("breadcrumbs") as maplibregl.GeoJSONSource;
+    const endpointSource = this.map.getSource("breadcrumb-endpoints") as maplibregl.GeoJSONSource | undefined;
     const coords = this.state.breadcrumbCoords;
     console.debug("[map] updateBreadcrumbs: setting", coords.length, "coords");
     if (coords.length < 2) {
       source.setData({ type: "FeatureCollection", features: [] });
+      endpointSource?.setData({ type: "FeatureCollection", features: [] });
       return;
     }
     source.setData({
@@ -619,6 +670,7 @@ export class MapView {
       properties: {},
       geometry: { type: "LineString", coordinates: coords },
     });
+    endpointSource?.setData(trailEndpointFeatureCollection(coords));
   }
 
   private updateHistoryTrail() {
@@ -662,6 +714,47 @@ export async function reverseGeocode(lat: number, lon: number): Promise<string |
   } catch {
     return null;
   }
+}
+
+function trailGradientExpression(): maplibregl.ExpressionSpecification {
+  return [
+    "interpolate",
+    ["linear"],
+    ["line-progress"],
+    0,
+    "#2563eb", // start: blue
+    0.2,
+    "#06b6d4",
+    0.4,
+    "#22c55e",
+    0.6,
+    "#facc15",
+    0.8,
+    "#f97316",
+    1,
+    "#ef4444", // end: red
+  ] as maplibregl.ExpressionSpecification;
+}
+
+function trailEndpointFeatureCollection(coords: [number, number][]) {
+  const start = coords[0];
+  const end = coords[coords.length - 1];
+
+  return {
+    type: "FeatureCollection" as const,
+    features: [
+      {
+        type: "Feature" as const,
+        properties: { kind: "start", color: "#2563eb" },
+        geometry: { type: "Point" as const, coordinates: start },
+      },
+      {
+        type: "Feature" as const,
+        properties: { kind: "end", color: "#ef4444" },
+        geometry: { type: "Point" as const, coordinates: end },
+      },
+    ],
+  };
 }
 
 // Decode Valhalla precision-6 encoded polyline

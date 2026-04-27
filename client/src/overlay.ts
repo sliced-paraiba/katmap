@@ -71,7 +71,17 @@ function addCustomLayers() {
   if (!map.getSource("trail")) {
     map.addSource("trail", {
       type: "geojson",
+      lineMetrics: true,
       data: { type: "FeatureCollection", features: [] },
+    });
+  }
+  if (!map.getLayer("trail-line-casing")) {
+    map.addLayer({
+      id: "trail-line-casing",
+      type: "line",
+      source: "trail",
+      layout: { "line-join": "round", "line-cap": "round" },
+      paint: { "line-color": "#111827", "line-width": 6, "line-opacity": 0.45 },
     });
   }
   if (!map.getLayer("trail-line")) {
@@ -80,7 +90,39 @@ function addCustomLayers() {
       type: "line",
       source: "trail",
       layout: { "line-join": "round", "line-cap": "round" },
-      paint: { "line-color": "#FF6B00", "line-width": 2, "line-opacity": 0.65 },
+      paint: { "line-gradient": trailGradientExpression(), "line-width": 4, "line-opacity": 0.95 },
+    });
+  }
+
+  if (!map.getSource("trail-endpoints")) {
+    map.addSource("trail-endpoints", {
+      type: "geojson",
+      data: { type: "FeatureCollection", features: [] },
+    });
+  }
+  if (!map.getLayer("trail-endpoint-halo")) {
+    map.addLayer({
+      id: "trail-endpoint-halo",
+      type: "circle",
+      source: "trail-endpoints",
+      paint: {
+        "circle-color": "#ffffff",
+        "circle-radius": ["case", ["==", ["get", "kind"], "end"], 8, 7],
+        "circle-opacity": 0.9,
+      },
+    });
+  }
+  if (!map.getLayer("trail-endpoint")) {
+    map.addLayer({
+      id: "trail-endpoint",
+      type: "circle",
+      source: "trail-endpoints",
+      paint: {
+        "circle-color": ["get", "color"],
+        "circle-radius": ["case", ["==", ["get", "kind"], "end"], 5, 4],
+        "circle-stroke-color": "#111827",
+        "circle-stroke-width": 1.5,
+      },
     });
   }
 
@@ -99,6 +141,10 @@ function addCustomLayers() {
       paint: { "line-color": "#0f9b8e", "line-width": 3, "line-opacity": 0.8 },
     });
   }
+
+  // Keep trail endpoint dots above the route line so start/end stay visible.
+  if (map.getLayer("trail-endpoint-halo")) map.moveLayer("trail-endpoint-halo");
+  if (map.getLayer("trail-endpoint")) map.moveLayer("trail-endpoint");
 }
 
 function reapplyData() {
@@ -178,9 +224,11 @@ function updateRouteLayer() {
 
 function updateTrailLayer() {
   const src = map.getSource("trail") as maplibregl.GeoJSONSource | undefined;
+  const endpointSrc = map.getSource("trail-endpoints") as maplibregl.GeoJSONSource | undefined;
   if (!src) return;
   if (trailCoords.length < 2) {
     src.setData({ type: "FeatureCollection", features: [] });
+    endpointSrc?.setData({ type: "FeatureCollection", features: [] });
     return;
   }
   src.setData({
@@ -188,6 +236,48 @@ function updateTrailLayer() {
     properties: {},
     geometry: { type: "LineString", coordinates: trailCoords },
   });
+  endpointSrc?.setData(trailEndpointFeatureCollection(trailCoords));
+}
+
+function trailGradientExpression(): maplibregl.ExpressionSpecification {
+  return [
+    "interpolate",
+    ["linear"],
+    ["line-progress"],
+    0,
+    "#2563eb",
+    0.2,
+    "#06b6d4",
+    0.4,
+    "#22c55e",
+    0.6,
+    "#facc15",
+    0.8,
+    "#f97316",
+    1,
+    "#ef4444",
+  ] as maplibregl.ExpressionSpecification;
+}
+
+function trailEndpointFeatureCollection(coords: [number, number][]) {
+  const start = coords[0];
+  const end = coords[coords.length - 1];
+
+  return {
+    type: "FeatureCollection" as const,
+    features: [
+      {
+        type: "Feature" as const,
+        properties: { kind: "start", color: "#2563eb" },
+        geometry: { type: "Point" as const, coordinates: start },
+      },
+      {
+        type: "Feature" as const,
+        properties: { kind: "end", color: "#ef4444" },
+        geometry: { type: "Point" as const, coordinates: end },
+      },
+    ],
+  };
 }
 
 // ── Start ──────────────────────────────────────────────────────────────
