@@ -1,6 +1,7 @@
 mod companion;
 mod history;
 mod resolve;
+mod snipe;
 mod types;
 mod valhalla;
 mod ws;
@@ -107,6 +108,9 @@ async fn main() {
         .route("/api/admin/history", get(history::admin_list_history_handler))
         .route("/api/admin/history/{id}", axum::routing::patch(history::admin_update_history_handler).delete(history::admin_delete_history_handler))
         .route("/api/admin/history/{id}/edits", axum::routing::put(history::admin_update_edits_handler))
+        .route("/snipe", get(snipe::page))
+        .route("/api/snipe/status", get(snipe::status_handler))
+        .route("/api/snipe/route", post(snipe::route_handler))
         .route("/resolve-url", get(resolve::resolve_url))
         .route("/discord", get({
             let discord_url = state.social_links.discord.clone();
