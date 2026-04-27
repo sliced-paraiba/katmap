@@ -103,6 +103,10 @@ async fn main() {
         .route("/api/location", post(companion::location_handler))
         .route("/api/location/status", get(companion::status_handler))
         .route("/api/history", get(history::list_history_handler))
+        .route("/admin/history", get(history::admin_history_page))
+        .route("/api/admin/history", get(history::admin_list_history_handler))
+        .route("/api/admin/history/{id}", axum::routing::patch(history::admin_update_history_handler).delete(history::admin_delete_history_handler))
+        .route("/api/admin/history/{id}/edits", axum::routing::put(history::admin_update_edits_handler))
         .route("/resolve-url", get(resolve::resolve_url))
         .route("/discord", get({
             let discord_url = state.social_links.discord.clone();

@@ -1,11 +1,12 @@
 use std::path::PathBuf;
 
 use axum::{
-    extract::State,
-    http::StatusCode,
-    response::IntoResponse,
+    extract::{Path, Query, State},
+    http::{HeaderMap, StatusCode},
+    response::{Html, IntoResponse},
     Json,
 };
+use std::collections::BTreeMap;
 use rusqlite::{params, Connection, Statement};
 
 use serde::{Deserialize, Serialize};
@@ -29,6 +30,53 @@ pub struct HistoryEntry {
     /// Full telemetry per point (altitude, accuracy, heading, speed, etc.)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub telemetry: Option<Vec<crate::types::BreadcrumbPoint>>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct TrailEdits {
+    /// Original breadcrumb indices hidden from display. Non-destructive: original points stay in DB.
+    #[serde(default)]
+    pub hidden_indices: Vec<usize>,
+    /// Original breadcrumb index -> replacement `[lon, lat]`.
+    #[serde(default)]
+    pub moved_points: BTreeMap<usize, [f64; 2]>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AdminHistoryEntry {
+    pub id: i64,
+    pub streamer_id: String,
+    pub platform: String,
+    pub started_at: i64,
+    pub ended_at: i64,
+    #[serde(default)]
+    pub session_id: Option<String>,
+    #[serde(default)]
+    pub stream_title: Option<String>,
+    #[serde(default)]
+    pub viewer_count: Option<i32>,
+    pub hidden: bool,
+    pub completed: bool,
+    /// Original, unedited trail.
+    pub breadcrumbs: Vec<[f64; 2]>,
+    /// Trail after applying `edits`.
+    pub edited_breadcrumbs: Vec<[f64; 2]>,
+    #[serde(default)]
+    pub edits: TrailEdits,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct AdminUpdateEntry {
+    #[serde(default)]
+    pub session_id: Option<Option<String>>,
+    #[serde(default)]
+    pub hidden: Option<bool>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct AdminListQuery {
+    #[serde(default)]
+    pub all: bool,
 }
 
 pub struct HistoryState {
@@ -122,6 +170,21 @@ pub async fn init_history(db_path: PathBuf) -> HistoryState {
                 [],
             )
             .expect("failed to add telemetry column");
+        }
+
+        let has_trail_edits: bool = conn
+            .query_row(
+                "SELECT COUNT(*) > 0 FROM pragma_table_info('streams') WHERE name = 'trail_edits'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap_or(false);
+        if !has_trail_edits {
+            conn.execute(
+                "ALTER TABLE streams ADD COLUMN trail_edits TEXT",
+                [],
+            )
+            .expect("failed to add trail_edits column");
         }
         tracing::info!("History DB initialized at {:?}", db_path);
         conn
@@ -243,7 +306,7 @@ pub async fn list_history_internal(state: &HistoryState) -> Vec<HistoryEntry> {
     let guard = state.db.lock().await;
     let mut stmt: Statement<'_> = guard
         .prepare(
-            "SELECT id, streamer_id, platform, started_at, ended_at, stream_title, viewer_count, breadcrumbs, telemetry
+            "SELECT id, streamer_id, platform, started_at, ended_at, stream_title, viewer_count, breadcrumbs, telemetry, trail_edits
              FROM streams WHERE hidden = 0 ORDER BY started_at DESC",
         )
         .expect("failed to prepare statement");
@@ -256,6 +319,8 @@ pub async fn list_history_internal(state: &HistoryState) -> Vec<HistoryEntry> {
             let telemetry_json: Option<String> = row.get(8)?;
             let telemetry: Option<Vec<crate::types::BreadcrumbPoint>> =
                 telemetry_json.and_then(|j| serde_json::from_str(&j).ok());
+            let edits_json: Option<String> = row.get(9)?;
+            let edits = parse_edits(edits_json.as_deref());
             Ok(HistoryEntry {
                 id: row.get(0)?,
                 streamer_id: row.get(1)?,
@@ -264,13 +329,175 @@ pub async fn list_history_internal(state: &HistoryState) -> Vec<HistoryEntry> {
                 ended_at: row.get(4)?,
                 stream_title: row.get(5)?,
                 viewer_count: row.get(6)?,
-                breadcrumbs,
+                breadcrumbs: apply_trail_edits(&breadcrumbs, &edits),
                 telemetry,
             })
         })
         .expect("failed to query");
 
     rows.filter_map(|r| r.ok()).collect()
+}
+
+fn parse_edits(json: Option<&str>) -> TrailEdits {
+    json.and_then(|j| serde_json::from_str(j).ok()).unwrap_or_default()
+}
+
+fn apply_trail_edits(points: &[[f64; 2]], edits: &TrailEdits) -> Vec<[f64; 2]> {
+    points
+        .iter()
+        .enumerate()
+        .filter_map(|(idx, point)| {
+            if edits.hidden_indices.contains(&idx) {
+                None
+            } else {
+                Some(edits.moved_points.get(&idx).copied().unwrap_or(*point))
+            }
+        })
+        .collect()
+}
+
+fn is_admin_authorized(headers: &HeaderMap, state: &AppState) -> bool {
+    let expected = std::env::var("ADMIN_API_KEY")
+        .ok()
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| state.companion_api_key.clone());
+    headers
+        .get("authorization")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.strip_prefix("Bearer "))
+        .is_some_and(|token| token == expected)
+}
+
+fn unauthorized() -> axum::response::Response {
+    (StatusCode::UNAUTHORIZED, "Invalid or missing admin token").into_response()
+}
+
+pub async fn admin_history_page() -> impl IntoResponse {
+    Html(include_str!("admin_history.html"))
+}
+
+pub async fn admin_list_history_handler(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Query(query): Query<AdminListQuery>,
+) -> impl IntoResponse {
+    if !is_admin_authorized(&headers, &state) {
+        return unauthorized();
+    }
+    let history = match &state.history {
+        Some(h) => h,
+        None => return (StatusCode::NOT_FOUND, "History not configured").into_response(),
+    };
+    let guard = history.db.lock().await;
+    let where_clause = if query.all { "" } else { "WHERE hidden = 0" };
+    let sql = format!(
+        "SELECT id, streamer_id, platform, started_at, ended_at, session_id, stream_title, viewer_count, hidden, completed, breadcrumbs, trail_edits FROM streams {where_clause} ORDER BY started_at DESC"
+    );
+    let mut stmt = match guard.prepare(&sql) {
+        Ok(stmt) => stmt,
+        Err(e) => return (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
+    };
+    let rows = match stmt.query_map([], |row| {
+        let breadcrumbs_json: String = row.get(10)?;
+        let breadcrumbs: Vec<[f64; 2]> = serde_json::from_str(&breadcrumbs_json).unwrap_or_default();
+        let edits_json: Option<String> = row.get(11)?;
+        let edits = parse_edits(edits_json.as_deref());
+        let edited_breadcrumbs = apply_trail_edits(&breadcrumbs, &edits);
+        Ok(AdminHistoryEntry {
+            id: row.get(0)?,
+            streamer_id: row.get(1)?,
+            platform: row.get(2)?,
+            started_at: row.get(3)?,
+            ended_at: row.get(4)?,
+            session_id: row.get(5)?,
+            stream_title: row.get(6)?,
+            viewer_count: row.get(7)?,
+            hidden: row.get::<_, i32>(8)? != 0,
+            completed: row.get::<_, i32>(9)? != 0,
+            breadcrumbs,
+            edited_breadcrumbs,
+            edits,
+        })
+    }) {
+        Ok(rows) => rows,
+        Err(e) => return (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
+    };
+    let entries: Vec<_> = rows.filter_map(|r| r.ok()).collect();
+    (StatusCode::OK, Json(entries)).into_response()
+}
+
+pub async fn admin_update_history_handler(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<i64>,
+    Json(update): Json<AdminUpdateEntry>,
+) -> impl IntoResponse {
+    if !is_admin_authorized(&headers, &state) {
+        return unauthorized();
+    }
+    let history = match &state.history {
+        Some(h) => h,
+        None => return (StatusCode::NOT_FOUND, "History not configured").into_response(),
+    };
+    let guard = history.db.lock().await;
+    if let Some(session_id) = update.session_id {
+        if let Err(e) = guard.execute("UPDATE streams SET session_id = ?1 WHERE id = ?2", params![session_id, id]) {
+            return (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response();
+        }
+    }
+    if let Some(hidden) = update.hidden {
+        if let Err(e) = guard.execute("UPDATE streams SET hidden = ?1 WHERE id = ?2", params![hidden as i32, id]) {
+            return (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response();
+        }
+    }
+    (StatusCode::OK, "Updated").into_response()
+}
+
+pub async fn admin_update_edits_handler(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<i64>,
+    Json(mut edits): Json<TrailEdits>,
+) -> impl IntoResponse {
+    if !is_admin_authorized(&headers, &state) {
+        return unauthorized();
+    }
+    edits.hidden_indices.sort_unstable();
+    edits.hidden_indices.dedup();
+    let json = match serde_json::to_string(&edits) {
+        Ok(json) => json,
+        Err(e) => return (StatusCode::BAD_REQUEST, e.to_string()).into_response(),
+    };
+    let history = match &state.history {
+        Some(h) => h,
+        None => return (StatusCode::NOT_FOUND, "History not configured").into_response(),
+    };
+    let guard = history.db.lock().await;
+    match guard.execute("UPDATE streams SET trail_edits = ?1 WHERE id = ?2", params![json, id]) {
+        Ok(0) => (StatusCode::NOT_FOUND, "Session not found").into_response(),
+        Ok(_) => (StatusCode::OK, "Updated").into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
+    }
+}
+
+pub async fn admin_delete_history_handler(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<i64>,
+) -> impl IntoResponse {
+    if !is_admin_authorized(&headers, &state) {
+        return unauthorized();
+    }
+    let history = match &state.history {
+        Some(h) => h,
+        None => return (StatusCode::NOT_FOUND, "History not configured").into_response(),
+    };
+    let guard = history.db.lock().await;
+    match guard.execute("DELETE FROM streams WHERE id = ?1", [id]) {
+        Ok(0) => (StatusCode::NOT_FOUND, "Session not found").into_response(),
+        Ok(_) => (StatusCode::OK, "Deleted").into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
+    }
 }
 
 pub async fn list_history_handler(State(state): State<AppState>) -> impl IntoResponse {
