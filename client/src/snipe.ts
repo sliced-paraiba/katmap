@@ -28,6 +28,7 @@ let streamerMarker: maplibregl.Marker | null = null;
 let routeTimer: number | null = null;
 let follow = true;
 let watchId: number | null = null;
+let routeBackoffUntil = 0;
 
 const map = new maplibregl.Map({
   container: "map",
@@ -63,9 +64,18 @@ function emptyFc(): GeoJSON.FeatureCollection {
 function authHeaders(): Record<string, string> {
   return { Authorization: `Bearer ${tokenEl.value}`, "Content-Type": "application/json" };
 }
+class ApiError extends Error {
+  constructor(message: string, readonly status: number, readonly retryAfter: number | null) {
+    super(message);
+  }
+}
+
 async function api<T>(url: string, opts: RequestInit = {}): Promise<T> {
   const res = await fetch(url, { ...opts, headers: { ...authHeaders(), ...(opts.headers || {}) } });
-  if (!res.ok) throw new Error(await res.text() || res.statusText);
+  if (!res.ok) {
+    const retryAfter = Number.parseInt(res.headers.get("retry-after") || "", 10);
+    throw new ApiError(await res.text() || res.statusText, res.status, Number.isFinite(retryAfter) ? retryAfter : null);
+  }
   return await res.json() as T;
 }
 function setStatus(s: string) { $("status").textContent = s; }
@@ -114,6 +124,7 @@ function startGps() {
 
 async function route(force = false) {
   if (!tokenEl.value) return;
+  if (!force && Date.now() < routeBackoffUntil) return;
   try {
     const status = await api<SnipeStatus>("/api/snipe/status");
     streamerLoc = status.streamer ? { lat: status.streamer.lat, lon: status.streamer.lon } : null;
@@ -131,7 +142,13 @@ async function route(force = false) {
     lastRouteStreamer = { ...streamerLoc };
     renderRoute(data);
   } catch (e) {
-    setStatus(e instanceof Error ? e.message : String(e));
+    if (e instanceof ApiError && e.status === 429) {
+      const seconds = e.retryAfter ?? 15;
+      routeBackoffUntil = Date.now() + seconds * 1000;
+      setStatus(`Rate limited; retrying in ${seconds}s`);
+    } else {
+      setStatus(e instanceof Error ? e.message : String(e));
+    }
   }
 }
 

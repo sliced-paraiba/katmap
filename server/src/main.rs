@@ -46,6 +46,12 @@ async fn main() {
         .unwrap_or(5.1);
     tracing::info!("Walking speed: {walking_speed_kmh} km/h");
 
+    let snipe_route_limit_per_minute: usize = std::env::var("SNIPE_ROUTE_LIMIT_PER_MINUTE")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(30);
+    tracing::info!("Snipe route limit: {snipe_route_limit_per_minute}/minute");
+
     let companion_api_key =
         std::env::var("COMPANION_API_KEY").expect("COMPANION_API_KEY is required");
     tracing::info!("Companion API key configured");
@@ -91,6 +97,7 @@ async fn main() {
         social_links,
         trail: Arc::new(Mutex::new(companion::TrailAccumulator::default())),
         live_location: Arc::new(RwLock::new(ws::LiveLocation::default())),
+        snipe_route_limiter: Arc::new(snipe::SnipeRouteLimiter::new(snipe_route_limit_per_minute)),
     };
 
     // Spawn stale session detector

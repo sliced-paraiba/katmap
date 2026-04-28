@@ -53,6 +53,7 @@ pub struct AppState {
     pub social_links: SocialLinks,
     pub trail: Arc<Mutex<TrailAccumulator>>,
     pub live_location: Arc<RwLock<LiveLocation>>,
+    pub snipe_route_limiter: Arc<crate::snipe::SnipeRouteLimiter>,
 }
 
 pub async fn ws_handler(ws: WebSocketUpgrade, State(state): State<AppState>) -> impl IntoResponse {

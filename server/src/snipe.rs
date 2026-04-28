@@ -1,10 +1,15 @@
 use axum::{
     Json,
     extract::State,
-    http::{HeaderMap, StatusCode},
+    http::{HeaderMap, StatusCode, header},
     response::IntoResponse,
 };
 use serde::{Deserialize, Serialize};
+use std::{
+    collections::VecDeque,
+    time::{Duration, Instant},
+};
+use tokio::sync::Mutex;
 
 use crate::{
     valhalla::{self, Costing, RoutePoint},
@@ -66,6 +71,48 @@ pub struct SnipeManeuver {
     pub street_names: Vec<String>,
 }
 
+#[derive(Debug)]
+pub struct SnipeRouteLimiter {
+    max_per_minute: usize,
+    requests: Mutex<VecDeque<Instant>>,
+}
+
+impl SnipeRouteLimiter {
+    pub fn new(max_per_minute: usize) -> Self {
+        Self {
+            max_per_minute,
+            requests: Mutex::new(VecDeque::new()),
+        }
+    }
+
+    async fn check(&self) -> Result<(), Duration> {
+        if self.max_per_minute == 0 {
+            return Ok(());
+        }
+
+        let now = Instant::now();
+        let window = Duration::from_secs(60);
+        let mut requests = self.requests.lock().await;
+        while requests
+            .front()
+            .is_some_and(|t| now.duration_since(*t) >= window)
+        {
+            requests.pop_front();
+        }
+
+        if requests.len() >= self.max_per_minute {
+            let retry_after = requests
+                .front()
+                .map(|t| window.saturating_sub(now.duration_since(*t)))
+                .unwrap_or_else(|| Duration::from_secs(1));
+            Err(retry_after)
+        } else {
+            requests.push_back(now);
+            Ok(())
+        }
+    }
+}
+
 fn is_authorized(headers: &HeaderMap) -> bool {
     let expected = match std::env::var("SNIPING_API_KEY") {
         Ok(token) if !token.is_empty() => token,
@@ -116,6 +163,16 @@ pub async fn route_handler(
 ) -> impl IntoResponse {
     if !is_authorized(&headers) {
         return unauthorized();
+    }
+
+    if let Err(retry_after) = state.snipe_route_limiter.check().await {
+        let seconds = retry_after.as_secs().max(1).to_string();
+        return (
+            StatusCode::TOO_MANY_REQUESTS,
+            [(header::RETRY_AFTER, seconds)],
+            "Rate limit exceeded; try again soon",
+        )
+            .into_response();
     }
 
     if !req.lat.is_finite() || !req.lon.is_finite() {
