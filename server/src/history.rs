@@ -63,6 +63,8 @@ pub struct AdminHistoryEntry {
     pub edited_breadcrumbs: Vec<[f64; 2]>,
     #[serde(default)]
     pub edits: TrailEdits,
+    #[serde(default)]
+    pub telemetry: Option<Vec<crate::types::BreadcrumbPoint>>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -376,7 +378,7 @@ pub async fn admin_list_history_handler(
     let guard = history.db.lock().await;
     let where_clause = if query.all { "" } else { "WHERE hidden = 0" };
     let sql = format!(
-        "SELECT id, streamer_id, platform, started_at, ended_at, session_id, stream_title, viewer_count, hidden, completed, breadcrumbs, trail_edits FROM streams {where_clause} ORDER BY started_at DESC"
+        "SELECT id, streamer_id, platform, started_at, ended_at, session_id, stream_title, viewer_count, hidden, completed, breadcrumbs, trail_edits, telemetry FROM streams {where_clause} ORDER BY started_at DESC"
     );
     let mut stmt = match guard.prepare(&sql) {
         Ok(stmt) => stmt,
@@ -388,6 +390,9 @@ pub async fn admin_list_history_handler(
             serde_json::from_str(&breadcrumbs_json).unwrap_or_default();
         let edits_json: Option<String> = row.get(11)?;
         let edits = parse_edits(edits_json.as_deref());
+        let telemetry_json: Option<String> = row.get(12)?;
+        let telemetry: Option<Vec<crate::types::BreadcrumbPoint>> =
+            telemetry_json.and_then(|j| serde_json::from_str(&j).ok());
         let edited_breadcrumbs = apply_trail_edits(&breadcrumbs, &edits);
         Ok(AdminHistoryEntry {
             id: row.get(0)?,
@@ -403,6 +408,7 @@ pub async fn admin_list_history_handler(
             breadcrumbs,
             edited_breadcrumbs,
             edits,
+            telemetry,
         })
     }) {
         Ok(rows) => rows,

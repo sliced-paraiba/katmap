@@ -9,6 +9,17 @@ interface TrailEdits {
   moved_points: Record<string, LonLat>;
 }
 
+interface BreadcrumbTelemetry {
+  timestamp_ms: number;
+  lon: number;
+  lat: number;
+  altitude?: number | null;
+  accuracy?: number | null;
+  altitude_accuracy?: number | null;
+  heading?: number | null;
+  speed?: number | null;
+}
+
 interface AdminHistoryEntry {
   id: number;
   streamer_id: string;
@@ -23,6 +34,7 @@ interface AdminHistoryEntry {
   breadcrumbs: LonLat[];
   edited_breadcrumbs: LonLat[];
   edits: TrailEdits;
+  telemetry?: BreadcrumbTelemetry[] | null;
 }
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -107,6 +119,27 @@ function editedPoints(entry: AdminHistoryEntry): [number, LonLat][] {
   return entry.breadcrumbs.map((_, i): [number, LonLat] => [i, effectivePoint(entry, i)]).filter(([i]) => !hidden.has(i));
 }
 
+function telemetryFor(entry: AdminHistoryEntry, idx: number): BreadcrumbTelemetry | null {
+  return entry.telemetry?.[idx] ?? null;
+}
+
+function accuracyClass(accuracy?: number | null): string {
+  if (accuracy == null || !Number.isFinite(accuracy)) return "accuracy-unknown";
+  if (accuracy <= 25) return "accuracy-good";
+  if (accuracy <= 100) return "accuracy-warn";
+  return "accuracy-bad";
+}
+
+function pointDetails(entry: AdminHistoryEntry, idx: number): string {
+  const tel = telemetryFor(entry, idx);
+  const parts = [`Point ${idx + 1}/${entry.breadcrumbs.length}`];
+  if (tel?.timestamp_ms) parts.push(new Date(tel.timestamp_ms).toISOString());
+  if (tel?.accuracy != null) parts.push(`±${Math.round(tel.accuracy)}m`);
+  if (tel?.altitude != null) parts.push(`${Math.round(tel.altitude)}m alt`);
+  if (tel?.speed != null) parts.push(`${(tel.speed * 3.6).toFixed(1)} km/h`);
+  return parts.join(" · ");
+}
+
 async function load() {
   $("status").textContent = "Loading…";
   entries = await api<AdminHistoryEntry[]>(`/api/admin/history?all=${($("show-hidden") as HTMLInputElement).checked ? "true" : "false"}`);
@@ -149,14 +182,15 @@ function renderMap({ fit = false } = {}) {
   current.breadcrumbs.forEach((_, idx) => {
     if (!current) return;
     const p = effectivePoint(current, idx);
+    const tel = telemetryFor(current, idx);
     const el = document.createElement("div");
-    el.className = "marker" + (hidden.has(idx) ? " hidden-point" : "") + (current.edits.moved_points[String(idx)] ? " moved-point" : "") + (selectedIndex === idx ? " selected" : "");
+    el.className = "marker " + accuracyClass(tel?.accuracy) + (hidden.has(idx) ? " hidden-point" : "") + (current.edits.moved_points[String(idx)] ? " moved-point" : "") + (selectedIndex === idx ? " selected" : "");
     const marker = new maplibregl.Marker({ element: el, draggable: true }).setLngLat(p).addTo(map);
-    el.title = `Point ${idx + 1}`;
+    el.title = pointDetails(current, idx);
     el.onclick = (ev) => {
       ev.stopPropagation();
       selectedIndex = idx;
-      $("status").textContent = `Selected point ${idx + 1}/${current?.breadcrumbs.length ?? 0}`;
+      if (current) $("status").textContent = pointDetails(current, idx);
       renderMap();
     };
     marker.on("dragend", () => {
@@ -268,6 +302,23 @@ $("discard-edits").onclick = () => {
   if (!current || !confirm("Discard all saved GPS edits for this entry? Original breadcrumbs will be restored.")) return;
   current.edits = { hidden_indices: [], moved_points: {} };
   selectedIndex = null;
+  renderMap();
+};
+$("hide-low-accuracy").onclick = () => {
+  if (!current) return;
+  const threshold = Number.parseFloat(($("accuracy-threshold") as HTMLInputElement).value);
+  if (!Number.isFinite(threshold) || threshold <= 0) {
+    alert("Enter a positive accuracy threshold in meters");
+    return;
+  }
+  const toHide = (current.telemetry ?? [])
+    .map((tel, idx) => ({ idx, accuracy: tel.accuracy }))
+    .filter(({ accuracy }) => accuracy != null && accuracy > threshold)
+    .map(({ idx }) => idx);
+  const hidden = new Set(current.edits.hidden_indices);
+  toHide.forEach((idx) => hidden.add(idx));
+  current.edits.hidden_indices = [...hidden].sort((a, b) => a - b);
+  $("status").textContent = `Marked ${toHide.length} points with accuracy > ${threshold}m hidden`;
   renderMap();
 };
 $("save-edits").onclick = async () => {
