@@ -1,5 +1,40 @@
 use crate::types::{Maneuver, RouteLeg, Waypoint};
 
+pub enum Costing {
+    Pedestrian { walking_speed_kmh: f64 },
+    Bicycle,
+    Auto,
+}
+
+impl Costing {
+    fn name(&self) -> &'static str {
+        match self {
+            Costing::Pedestrian { .. } => "pedestrian",
+            Costing::Bicycle => "bicycle",
+            Costing::Auto => "auto",
+        }
+    }
+}
+
+pub struct RoutePoint {
+    pub lat: f64,
+    pub lon: f64,
+}
+
+pub struct SimpleManeuver {
+    pub instruction: String,
+    pub distance_km: f64,
+    pub duration_min: f64,
+    pub street_names: Vec<String>,
+}
+
+pub struct PointRouteResult {
+    pub polyline: String,
+    pub distance_km: f64,
+    pub duration_min: f64,
+    pub maneuvers: Vec<SimpleManeuver>,
+}
+
 /// Valhalla route response (subset of fields we care about)
 #[derive(Debug, serde::Deserialize)]
 struct ValhallaResponse {
@@ -57,60 +92,14 @@ pub async fn calculate_route(
         })
         .collect();
 
-    let body = serde_json::json!({
-        "locations": locations,
-        "costing": "pedestrian",
-        "costing_options": {
-            "pedestrian": {
-                "walking_speed": walking_speed_kmh
-            }
-        },
-        "directions_options": {
-            "units": "kilometers"
-        }
-    });
+    let valhalla = fetch_valhalla_route(
+        valhalla_url,
+        locations,
+        Costing::Pedestrian { walking_speed_kmh },
+    )
+    .await?;
 
-    let client = reqwest::Client::new();
-    let resp = client
-        .post(format!("{}/route", valhalla_url))
-        .json(&body)
-        .send()
-        .await
-        .map_err(|e| format!("Valhalla request failed: {e}"))?;
-
-    if !resp.status().is_success() {
-        let status = resp.status();
-        let body = resp.text().await.unwrap_or_default();
-        return Err(format!("Valhalla returned {status}: {body}"));
-    }
-
-    let valhalla: ValhallaResponse = resp
-        .json()
-        .await
-        .map_err(|e| format!("Failed to parse Valhalla response: {e}"))?;
-
-    // Build the full encoded polyline by concatenating leg shapes.
-    // Each leg has its own shape — we need to merge them.
-    // The last point of leg N == first point of leg N+1 in Valhalla,
-    // but encoded polylines are delta-encoded so we can't just concatenate strings.
-    // Instead, use the first leg's shape as the full polyline if there's only one leg,
-    // or re-encode from decoded coordinates.
-    let polyline = if valhalla.trip.legs.len() == 1 {
-        valhalla.trip.legs[0].shape.clone()
-    } else {
-        // Decode all legs, merge (skipping duplicate junction points), re-encode
-        let mut all_coords: Vec<(f64, f64)> = Vec::new();
-        for (i, leg) in valhalla.trip.legs.iter().enumerate() {
-            let decoded = decode_polyline6(&leg.shape);
-            if i == 0 {
-                all_coords.extend(decoded);
-            } else {
-                // Skip first point (duplicate of previous leg's last point)
-                all_coords.extend(decoded.into_iter().skip(1));
-            }
-        }
-        encode_polyline6(&all_coords)
-    };
+    let polyline = merged_polyline(&valhalla.trip.legs);
 
     // Map legs to our RouteLeg type
     // Track cumulative shape index offset for multi-leg routes
@@ -165,6 +154,107 @@ pub struct RouteResult {
     pub distance_km: f64,
     pub duration_min: f64,
     pub legs: Vec<RouteLeg>,
+}
+
+pub async fn calculate_point_to_point_route(
+    points: &[RoutePoint],
+    valhalla_url: &str,
+    costing: Costing,
+) -> Result<PointRouteResult, String> {
+    if points.len() < 2 {
+        return Err("Need at least 2 points to calculate a route".into());
+    }
+
+    let locations: Vec<serde_json::Value> = points
+        .iter()
+        .map(|point| {
+            serde_json::json!({
+                "lat": point.lat,
+                "lon": point.lon,
+            })
+        })
+        .collect();
+
+    let valhalla = fetch_valhalla_route(valhalla_url, locations, costing).await?;
+    let polyline = merged_polyline(&valhalla.trip.legs);
+    let maneuvers = valhalla
+        .trip
+        .legs
+        .iter()
+        .flat_map(|leg| &leg.maneuvers)
+        .map(|m| SimpleManeuver {
+            instruction: m.instruction.clone(),
+            distance_km: m.length,
+            duration_min: m.time / 60.0,
+            street_names: m.street_names.clone(),
+        })
+        .collect();
+
+    Ok(PointRouteResult {
+        polyline,
+        distance_km: valhalla.trip.summary.length,
+        duration_min: valhalla.trip.summary.time / 60.0,
+        maneuvers,
+    })
+}
+
+async fn fetch_valhalla_route(
+    valhalla_url: &str,
+    locations: Vec<serde_json::Value>,
+    costing: Costing,
+) -> Result<ValhallaResponse, String> {
+    let costing_name = costing.name();
+    let mut body = serde_json::json!({
+        "locations": locations,
+        "costing": costing_name,
+        "directions_options": {
+            "units": "kilometers"
+        }
+    });
+
+    if let Costing::Pedestrian { walking_speed_kmh } = costing {
+        body["costing_options"] = serde_json::json!({
+            "pedestrian": {
+                "walking_speed": walking_speed_kmh
+            }
+        });
+    }
+
+    let client = reqwest::Client::new();
+    let resp = client
+        .post(format!("{}/route", valhalla_url))
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| format!("Valhalla request failed: {e}"))?;
+
+    if !resp.status().is_success() {
+        let status = resp.status();
+        let body = resp.text().await.unwrap_or_default();
+        return Err(format!("Valhalla returned {status}: {body}"));
+    }
+
+    resp.json()
+        .await
+        .map_err(|e| format!("Failed to parse Valhalla response: {e}"))
+}
+
+fn merged_polyline(legs: &[ValhallaLeg]) -> String {
+    if legs.len() == 1 {
+        return legs[0].shape.clone();
+    }
+
+    // Decode all legs, merge (skipping duplicate junction points), re-encode.
+    let mut all_coords: Vec<(f64, f64)> = Vec::new();
+    for (i, leg) in legs.iter().enumerate() {
+        let decoded = decode_polyline6(&leg.shape);
+        if i == 0 {
+            all_coords.extend(decoded);
+        } else {
+            all_coords.extend(decoded.into_iter().skip(1));
+        }
+    }
+    encode_polyline6(&all_coords)
 }
 
 /// Decode a precision-6 encoded polyline into (lat, lon) pairs
@@ -239,11 +329,7 @@ fn encode_polyline6(coords: &[(f64, f64)]) -> String {
 }
 
 fn encode_value(value: i64, output: &mut String) {
-    let mut v = if value < 0 {
-        !(value << 1)
-    } else {
-        value << 1
-    } as u64;
+    let mut v = if value < 0 { !(value << 1) } else { value << 1 } as u64;
 
     while v >= 0x20 {
         output.push(((((v & 0x1f) as u8) | 0x20) + 63) as char);

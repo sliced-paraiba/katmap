@@ -6,7 +6,10 @@ use axum::{
 };
 use serde::{Deserialize, Serialize};
 
-use crate::ws::AppState;
+use crate::{
+    valhalla::{self, Costing, RoutePoint},
+    ws::AppState,
+};
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -17,11 +20,11 @@ pub enum TravelMode {
 }
 
 impl TravelMode {
-    fn valhalla_costing(&self) -> &'static str {
+    fn costing(&self, walking_speed_kmh: f64) -> Costing {
         match self {
-            TravelMode::Car => "auto",
-            TravelMode::Cycling => "bicycle",
-            TravelMode::Walking => "pedestrian",
+            TravelMode::Car => Costing::Auto,
+            TravelMode::Cycling => Costing::Bicycle,
+            TravelMode::Walking => Costing::Pedestrian { walking_speed_kmh },
         }
     }
 }
@@ -61,38 +64,6 @@ pub struct SnipeManeuver {
     pub duration_min: f64,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub street_names: Vec<String>,
-}
-
-#[derive(Debug, serde::Deserialize)]
-struct ValhallaResponse {
-    trip: ValhallaTrip,
-}
-
-#[derive(Debug, serde::Deserialize)]
-struct ValhallaTrip {
-    summary: ValhallaSummary,
-    legs: Vec<ValhallaLeg>,
-}
-
-#[derive(Debug, serde::Deserialize)]
-struct ValhallaSummary {
-    length: f64,
-    time: f64,
-}
-
-#[derive(Debug, serde::Deserialize)]
-struct ValhallaLeg {
-    shape: String,
-    maneuvers: Vec<ValhallaManeuver>,
-}
-
-#[derive(Debug, serde::Deserialize)]
-struct ValhallaManeuver {
-    instruction: String,
-    length: f64,
-    time: f64,
-    #[serde(default)]
-    street_names: Vec<String>,
 }
 
 fn is_authorized(headers: &HeaderMap) -> bool {
@@ -162,95 +133,50 @@ pub async fn route_handler(
     };
     drop(loc);
 
-    match calculate_route(
+    let points = [
+        RoutePoint {
+            lat: req.lat,
+            lon: req.lon,
+        },
+        RoutePoint {
+            lat: streamer.lat,
+            lon: streamer.lon,
+        },
+    ];
+
+    match valhalla::calculate_point_to_point_route(
+        &points,
         &state.valhalla_url,
-        req.lat,
-        req.lon,
-        streamer.lat,
-        streamer.lon,
-        req.mode,
-        state.walking_speed_kmh,
+        req.mode.costing(state.walking_speed_kmh),
     )
     .await
     {
-        Ok(mut route) => {
-            route.streamer = streamer;
-            (StatusCode::OK, Json(route)).into_response()
+        Ok(route) => {
+            let maneuvers = route
+                .maneuvers
+                .into_iter()
+                .map(|m| SnipeManeuver {
+                    instruction: m.instruction,
+                    distance_km: m.distance_km,
+                    duration_min: m.duration_min,
+                    street_names: m.street_names,
+                })
+                .collect();
+            (
+                StatusCode::OK,
+                Json(SnipeRouteResponse {
+                    streamer,
+                    polyline: route.polyline,
+                    distance_km: route.distance_km,
+                    duration_min: route.duration_min,
+                    maneuvers,
+                }),
+            )
+                .into_response()
         }
         Err(e) => {
             tracing::warn!("stream snipe route failed: {e}");
             (StatusCode::BAD_GATEWAY, e).into_response()
         }
     }
-}
-
-async fn calculate_route(
-    valhalla_url: &str,
-    origin_lat: f64,
-    origin_lon: f64,
-    dest_lat: f64,
-    dest_lon: f64,
-    mode: TravelMode,
-    walking_speed_kmh: f64,
-) -> Result<SnipeRouteResponse, String> {
-    let costing = mode.valhalla_costing();
-    let mut body = serde_json::json!({
-        "locations": [
-            { "lat": origin_lat, "lon": origin_lon },
-            { "lat": dest_lat, "lon": dest_lon }
-        ],
-        "costing": costing,
-        "directions_options": { "units": "kilometers" }
-    });
-
-    if matches!(mode, TravelMode::Walking) {
-        body["costing_options"] = serde_json::json!({
-            "pedestrian": { "walking_speed": walking_speed_kmh }
-        });
-    }
-
-    let resp = reqwest::Client::new()
-        .post(format!("{}/route", valhalla_url))
-        .json(&body)
-        .send()
-        .await
-        .map_err(|e| format!("Valhalla request failed: {e}"))?;
-
-    if !resp.status().is_success() {
-        let status = resp.status();
-        let body = resp.text().await.unwrap_or_default();
-        return Err(format!("Valhalla returned {status}: {body}"));
-    }
-
-    let valhalla: ValhallaResponse = resp
-        .json()
-        .await
-        .map_err(|e| format!("Failed to parse Valhalla response: {e}"))?;
-
-    let leg = valhalla
-        .trip
-        .legs
-        .first()
-        .ok_or("Valhalla returned no legs")?;
-    let maneuvers = leg
-        .maneuvers
-        .iter()
-        .map(|m| SnipeManeuver {
-            instruction: m.instruction.clone(),
-            distance_km: m.length,
-            duration_min: m.time / 60.0,
-            street_names: m.street_names.clone(),
-        })
-        .collect();
-
-    Ok(SnipeRouteResponse {
-        streamer: SnipeLocation {
-            lat: dest_lat,
-            lon: dest_lon,
-        },
-        polyline: leg.shape.clone(),
-        distance_km: valhalla.trip.summary.length,
-        duration_min: valhalla.trip.summary.time / 60.0,
-        maneuvers,
-    })
 }
