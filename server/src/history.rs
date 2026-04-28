@@ -331,7 +331,7 @@ fn parse_edits(json: Option<&str>) -> TrailEdits {
         .unwrap_or_default()
 }
 
-fn apply_trail_edits(points: &[[f64; 2]], edits: &TrailEdits) -> Vec<[f64; 2]> {
+pub(crate) fn apply_trail_edits(points: &[[f64; 2]], edits: &TrailEdits) -> Vec<[f64; 2]> {
     points
         .iter()
         .enumerate()

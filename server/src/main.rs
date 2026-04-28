@@ -1,4 +1,6 @@
 mod companion;
+#[cfg(test)]
+mod domain_tests;
 mod history;
 mod resolve;
 mod snipe;
