@@ -50,13 +50,16 @@ katmap/
 │   ├── resolve.rs       # Google Maps short link resolution
 │   └── admin.rs         # CLI tool for history DB maintenance
 ├── client/src/
-│   ├── main.ts          # Entry point — wires state, net, map, sidebar
+│   ├── main.ts          # Main app entry point — wires state, net, map, sidebar
+│   ├── overlay.ts       # OBS overlay entry point
+│   ├── admin-history.ts # Authenticated history editor entry point
+│   ├── snipe.ts         # Authenticated stream-sniping GPS page entry point
 │   ├── types.ts         # TypeScript message types (mirrors server)
 │   ├── net.ts           # WebSocket client with exponential backoff reconnect
 │   ├── state.ts         # Reactive app state (pub/sub)
 │   ├── map.ts           # MapLibre GL JS — themes, markers, route layer, context menu
 │   ├── sidebar.ts       # Waypoint list, drag-reorder, route maneuvers, history browser
-│   └── style.css        # Dark theme, responsive layout, all component styles
+│   └── style.css        # Main app styles
 ├── docker-compose.yml   # Valhalla routing engine
 ├── justfile             # Dev/build task runner
 └── shell.nix            # Reproducible dev environment

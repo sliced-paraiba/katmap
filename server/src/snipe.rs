@@ -1,8 +1,8 @@
 use axum::{
+    Json,
     extract::State,
     http::{HeaderMap, StatusCode},
-    response::{Html, IntoResponse},
-    Json,
+    response::IntoResponse,
 };
 use serde::{Deserialize, Serialize};
 
@@ -109,11 +109,11 @@ fn is_authorized(headers: &HeaderMap) -> bool {
 }
 
 fn unauthorized() -> axum::response::Response {
-    (StatusCode::UNAUTHORIZED, "Invalid or missing stream sniping token").into_response()
-}
-
-pub async fn page() -> impl IntoResponse {
-    Html(include_str!("snipe.html"))
+    (
+        StatusCode::UNAUTHORIZED,
+        "Invalid or missing stream sniping token",
+    )
+        .into_response()
 }
 
 pub async fn status_handler(
@@ -127,7 +127,10 @@ pub async fn status_handler(
     let live = state.trail.lock().await.session_active;
     let loc = state.live_location.read().await;
     let streamer = if live && loc.valid {
-        Some(SnipeLocation { lat: loc.lat, lon: loc.lon })
+        Some(SnipeLocation {
+            lat: loc.lat,
+            lon: loc.lon,
+        })
     } else {
         None
     };
@@ -153,7 +156,10 @@ pub async fn route_handler(
     if !live || !loc.valid {
         return (StatusCode::CONFLICT, "Streamer is not live").into_response();
     }
-    let streamer = SnipeLocation { lat: loc.lat, lon: loc.lon };
+    let streamer = SnipeLocation {
+        lat: loc.lat,
+        lon: loc.lon,
+    };
     drop(loc);
 
     match calculate_route(
@@ -164,7 +170,9 @@ pub async fn route_handler(
         streamer.lon,
         req.mode,
         state.walking_speed_kmh,
-    ).await {
+    )
+    .await
+    {
         Ok(mut route) => {
             route.streamer = streamer;
             (StatusCode::OK, Json(route)).into_response()
@@ -219,16 +227,27 @@ async fn calculate_route(
         .await
         .map_err(|e| format!("Failed to parse Valhalla response: {e}"))?;
 
-    let leg = valhalla.trip.legs.first().ok_or("Valhalla returned no legs")?;
-    let maneuvers = leg.maneuvers.iter().map(|m| SnipeManeuver {
-        instruction: m.instruction.clone(),
-        distance_km: m.length,
-        duration_min: m.time / 60.0,
-        street_names: m.street_names.clone(),
-    }).collect();
+    let leg = valhalla
+        .trip
+        .legs
+        .first()
+        .ok_or("Valhalla returned no legs")?;
+    let maneuvers = leg
+        .maneuvers
+        .iter()
+        .map(|m| SnipeManeuver {
+            instruction: m.instruction.clone(),
+            distance_km: m.length,
+            duration_min: m.time / 60.0,
+            street_names: m.street_names.clone(),
+        })
+        .collect();
 
     Ok(SnipeRouteResponse {
-        streamer: SnipeLocation { lat: dest_lat, lon: dest_lon },
+        streamer: SnipeLocation {
+            lat: dest_lat,
+            lon: dest_lon,
+        },
         polyline: leg.shape.clone(),
         distance_km: valhalla.trip.summary.length,
         duration_min: valhalla.trip.summary.time / 60.0,

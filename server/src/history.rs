@@ -1,13 +1,13 @@
 use std::path::PathBuf;
 
 use axum::{
+    Json,
     extract::{Path, Query, State},
     http::{HeaderMap, StatusCode},
-    response::{Html, IntoResponse},
-    Json,
+    response::IntoResponse,
 };
+use rusqlite::{Connection, Statement, params};
 use std::collections::BTreeMap;
-use rusqlite::{params, Connection, Statement};
 
 use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex;
@@ -135,11 +135,8 @@ pub async fn init_history(db_path: PathBuf) -> HistoryState {
             )
             .unwrap_or(false);
         if !has_session_id {
-            conn.execute(
-                "ALTER TABLE streams ADD COLUMN session_id TEXT",
-                [],
-            )
-            .expect("failed to add session_id column");
+            conn.execute("ALTER TABLE streams ADD COLUMN session_id TEXT", [])
+                .expect("failed to add session_id column");
         }
 
         let has_hidden: bool = conn
@@ -165,11 +162,8 @@ pub async fn init_history(db_path: PathBuf) -> HistoryState {
             )
             .unwrap_or(false);
         if !has_telemetry {
-            conn.execute(
-                "ALTER TABLE streams ADD COLUMN telemetry TEXT",
-                [],
-            )
-            .expect("failed to add telemetry column");
+            conn.execute("ALTER TABLE streams ADD COLUMN telemetry TEXT", [])
+                .expect("failed to add telemetry column");
         }
 
         let has_trail_edits: bool = conn
@@ -180,11 +174,8 @@ pub async fn init_history(db_path: PathBuf) -> HistoryState {
             )
             .unwrap_or(false);
         if !has_trail_edits {
-            conn.execute(
-                "ALTER TABLE streams ADD COLUMN trail_edits TEXT",
-                [],
-            )
-            .expect("failed to add trail_edits column");
+            conn.execute("ALTER TABLE streams ADD COLUMN trail_edits TEXT", [])
+                .expect("failed to add trail_edits column");
         }
         tracing::info!("History DB initialized at {:?}", db_path);
         conn
@@ -206,8 +197,7 @@ pub async fn save_stream_internal(
     breadcrumbs: &[[f64; 2]],
     telemetry: Option<&str>,
 ) -> Result<(), String> {
-    let breadcrumbs_json =
-        serde_json::to_string(breadcrumbs).map_err(|e| e.to_string())?;
+    let breadcrumbs_json = serde_json::to_string(breadcrumbs).map_err(|e| e.to_string())?;
 
     {
         let guard = state.db.lock().await;
@@ -232,8 +222,7 @@ pub async fn upsert_incomplete_trail(
     breadcrumbs: &[[f64; 2]],
     telemetry: Option<&str>,
 ) -> Result<i64, String> {
-    let breadcrumbs_json =
-        serde_json::to_string(breadcrumbs).map_err(|e| e.to_string())?;
+    let breadcrumbs_json = serde_json::to_string(breadcrumbs).map_err(|e| e.to_string())?;
 
     let guard = state.db.lock().await;
 
@@ -287,8 +276,7 @@ pub async fn mark_trail_complete(
     breadcrumbs: &[[f64; 2]],
     telemetry: Option<&str>,
 ) -> Result<(), String> {
-    let breadcrumbs_json =
-        serde_json::to_string(breadcrumbs).map_err(|e| e.to_string())?;
+    let breadcrumbs_json = serde_json::to_string(breadcrumbs).map_err(|e| e.to_string())?;
     let guard = state.db.lock().await;
     guard
         .execute(
@@ -339,7 +327,8 @@ pub async fn list_history_internal(state: &HistoryState) -> Vec<HistoryEntry> {
 }
 
 fn parse_edits(json: Option<&str>) -> TrailEdits {
-    json.and_then(|j| serde_json::from_str(j).ok()).unwrap_or_default()
+    json.and_then(|j| serde_json::from_str(j).ok())
+        .unwrap_or_default()
 }
 
 fn apply_trail_edits(points: &[[f64; 2]], edits: &TrailEdits) -> Vec<[f64; 2]> {
@@ -372,10 +361,6 @@ fn unauthorized() -> axum::response::Response {
     (StatusCode::UNAUTHORIZED, "Invalid or missing admin token").into_response()
 }
 
-pub async fn admin_history_page() -> impl IntoResponse {
-    Html(include_str!("admin_history.html"))
-}
-
 pub async fn admin_list_history_handler(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -399,7 +384,8 @@ pub async fn admin_list_history_handler(
     };
     let rows = match stmt.query_map([], |row| {
         let breadcrumbs_json: String = row.get(10)?;
-        let breadcrumbs: Vec<[f64; 2]> = serde_json::from_str(&breadcrumbs_json).unwrap_or_default();
+        let breadcrumbs: Vec<[f64; 2]> =
+            serde_json::from_str(&breadcrumbs_json).unwrap_or_default();
         let edits_json: Option<String> = row.get(11)?;
         let edits = parse_edits(edits_json.as_deref());
         let edited_breadcrumbs = apply_trail_edits(&breadcrumbs, &edits);
@@ -441,12 +427,18 @@ pub async fn admin_update_history_handler(
     };
     let guard = history.db.lock().await;
     if let Some(session_id) = update.session_id {
-        if let Err(e) = guard.execute("UPDATE streams SET session_id = ?1 WHERE id = ?2", params![session_id, id]) {
+        if let Err(e) = guard.execute(
+            "UPDATE streams SET session_id = ?1 WHERE id = ?2",
+            params![session_id, id],
+        ) {
             return (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response();
         }
     }
     if let Some(hidden) = update.hidden {
-        if let Err(e) = guard.execute("UPDATE streams SET hidden = ?1 WHERE id = ?2", params![hidden as i32, id]) {
+        if let Err(e) = guard.execute(
+            "UPDATE streams SET hidden = ?1 WHERE id = ?2",
+            params![hidden as i32, id],
+        ) {
             return (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response();
         }
     }
@@ -473,7 +465,10 @@ pub async fn admin_update_edits_handler(
         None => return (StatusCode::NOT_FOUND, "History not configured").into_response(),
     };
     let guard = history.db.lock().await;
-    match guard.execute("UPDATE streams SET trail_edits = ?1 WHERE id = ?2", params![json, id]) {
+    match guard.execute(
+        "UPDATE streams SET trail_edits = ?1 WHERE id = ?2",
+        params![json, id],
+    ) {
         Ok(0) => (StatusCode::NOT_FOUND, "Session not found").into_response(),
         Ok(_) => (StatusCode::OK, "Updated").into_response(),
         Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),

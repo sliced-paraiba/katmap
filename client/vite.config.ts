@@ -10,6 +10,8 @@ export default defineConfig({
       input: {
         main: resolve(__dirname, "index.html"),
         overlay: resolve(__dirname, "overlay.html"),
+        adminHistory: resolve(__dirname, "admin-history.html"),
+        snipe: resolve(__dirname, "snipe.html"),
       },
     },
   },

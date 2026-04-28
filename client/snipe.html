@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>KatMap Stream Snipe</title>
+  </head>
+  <body>
+    <header>
+      <h1>🎯 Stream Snipe</h1>
+      <input id="token" type="password" placeholder="Stream sniping token" autocomplete="current-password" />
+      <button id="start" class="primary">Start GPS</button>
+      <button data-mode="walking" class="mode active">Walking</button>
+      <button data-mode="cycling" class="mode">Cycling</button>
+      <button data-mode="car" class="mode">Car</button>
+      <button id="follow" class="active">Follow me</button>
+      <span id="status">Enter token and start GPS</span>
+    </header>
+    <div id="map"></div>
+    <div id="panel">
+      <div id="summary">No route yet</div>
+      <ol id="steps"><li class="hint">This routes from your browser GPS to the streamer's current live position.</li></ol>
+    </div>
+    <script type="module" src="/src/snipe.ts"></script>
+  </body>
+</html>

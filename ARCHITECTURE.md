@@ -19,8 +19,8 @@ graph TB
         sidebar.ts -->|fetch /api/history| sidebar.ts
     end
 
-    AdminPage["/admin/history"] -->|Bearer admin token| history.rs
-    SnipePage["/snipe"] -->|Bearer sniping token| snipe.rs
+    AdminPage["client/admin-history.html"] -->|Bearer admin token| history.rs
+    SnipePage["client/snipe.html"] -->|Bearer sniping token| snipe.rs
 
     net.ts <-->|WebSocket JSON| ws.rs
 
@@ -90,8 +90,10 @@ Sets up tracing, reads environment variables, creates the shared `AppState`, spa
 - `/api/location` — Companion app location push (POST, requires API key)
 - `/api/location/status` — Current trail status (GET)
 - `/api/history` — Public stream history list (GET; applies non-destructive GPS edits)
-- `/admin/history` + `/api/admin/history*` — Authenticated history editor and maintenance APIs
-- `/snipe` + `/api/snipe/*` — Authenticated stream-sniping GPS route page/APIs
+- `/admin/history` — Redirects to the Vite-built `admin-history.html` history editor
+- `/api/admin/history*` — Authenticated history editor and maintenance APIs
+- `/snipe` — Redirects to the Vite-built `snipe.html` stream-sniping page
+- `/api/snipe/*` — Authenticated stream-sniping GPS route APIs
 - `/resolve-url` — Google Maps short link resolution
 - `/discord` — Redirect to configured Discord invite
 - Everything else — static files from `../client/dist/` (via `tower_http::services::ServeDir`)

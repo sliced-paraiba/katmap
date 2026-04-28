@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>KatMap History Admin</title>
+  </head>
+  <body>
+    <aside>
+      <header>
+        <input id="token" type="password" placeholder="Admin token" autocomplete="current-password" />
+        <label><input id="show-hidden" type="checkbox" /> Show hidden entries</label>
+        <button id="load" class="primary">Load history</button>
+        <div class="hint">Auth uses <code>ADMIN_API_KEY</code>, falling back to companion API key.</div>
+      </header>
+      <div id="list"></div>
+    </aside>
+    <main>
+      <div id="toolbar">
+        <input id="name" placeholder="Session name" />
+        <button id="rename">Rename</button>
+        <button id="toggle-hide">Hide entry</button>
+        <button id="delete-entry" class="danger">Delete entry</button>
+        <button id="hide-point">Hide point</button>
+        <button id="unhide-point">Unhide point</button>
+        <button id="reset-point">Reset moved point</button>
+        <button id="discard-edits" class="danger">Discard all GPS edits</button>
+        <button id="save-edits" class="primary">Save GPS edits</button>
+        <span id="status">No entry selected</span>
+      </div>
+      <div id="map"></div>
+    </main>
+    <script type="module" src="/src/admin-history.ts"></script>
+  </body>
+</html>
