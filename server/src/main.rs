@@ -55,7 +55,7 @@ async fn main() {
 
     let auto_complete_waypoints = std::env::var("AUTO_COMPLETE_WAYPOINTS")
         .ok()
-        .is_some_and(|v| matches!(v.as_str(), "1" | "true" | "TRUE" | "yes" | "YES"));
+        .is_none_or(|v| matches!(v.as_str(), "1" | "true" | "TRUE" | "yes" | "YES"));
     let auto_complete_radius_m: f64 = std::env::var("AUTO_COMPLETE_WAYPOINT_RADIUS_M")
         .ok()
         .and_then(|s| s.parse().ok())
