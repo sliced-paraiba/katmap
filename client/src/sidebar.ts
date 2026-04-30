@@ -813,7 +813,7 @@ export class Sidebar {
   }
 
   private showHelpCard() {
-    this.helpCard.style.display = "block";
+    this.helpCard.style.display = "";  // remove inline display so CSS .help-overlay's flex takes over
     this.markHelpSeen();
   }
 
