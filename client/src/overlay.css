@@ -10,13 +10,18 @@ html, body {
   overflow: hidden;
   background: transparent;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-  color: #e0e0e0;
+  color: #f8fafc;
 }
 
 #overlay {
   position: relative;
   width: 100%;
   height: 100%;
+}
+
+#overlay.stale #map,
+#overlay.offline #map {
+  filter: grayscale(0.3) brightness(0.72);
 }
 
 #map {
@@ -32,28 +37,66 @@ html, body {
 
 #telemetry {
   position: absolute;
-  top: 10px;
-  left: 10px;
-  background: rgba(26, 26, 46, 0.85);
-  backdrop-filter: blur(8px);
-  border-radius: 10px;
+  top: 14px;
+  left: 14px;
+  background: rgba(2, 6, 23, 0.82);
+  backdrop-filter: blur(10px);
+  border-radius: 14px;
   padding: 10px 12px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.16);
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 7px;
   pointer-events: none;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45), 0 0 0 1px rgba(0, 0, 0, 0.25);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.85);
+}
+
+.status-badge {
+  align-self: flex-start;
+  border-radius: 999px;
+  padding: 3px 8px;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  background: rgba(148, 163, 184, 0.2);
+  color: #e2e8f0;
+  border: 1px solid rgba(226, 232, 240, 0.25);
+}
+
+.status-live {
+  background: rgba(20, 184, 166, 0.25);
+  color: #99f6e4;
+  border-color: rgba(45, 212, 191, 0.45);
+}
+
+.status-stale {
+  background: rgba(245, 158, 11, 0.25);
+  color: #fde68a;
+  border-color: rgba(251, 191, 36, 0.5);
+}
+
+.status-offline {
+  background: rgba(239, 68, 68, 0.22);
+  color: #fecaca;
+  border-color: rgba(248, 113, 113, 0.45);
 }
 
 .tel-heading-row {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 11px;
 }
 
 #heading-arrow {
-  transition: transform 0.5s ease-out;
+  transition: transform 0.5s ease-out, opacity 0.3s ease;
   flex-shrink: 0;
+  filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.7));
+}
+
+#heading-arrow.heading-unknown {
+  opacity: 0.42;
 }
 
 .tel-values {
@@ -63,22 +106,34 @@ html, body {
 }
 
 .tel-value {
-  font-size: 13px;
+  font-size: 14px;
+  font-weight: 750;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
 
+.tel-value.muted {
+  font-size: 12px;
+  font-weight: 600;
+  color: #cbd5e1;
+}
+
 .tel-coords {
   font-size: 11px;
-  color: #888;
+  color: #cbd5e1;
   font-variant-numeric: tabular-nums;
 }
 
 .streamer-dot {
-  width: 14px;
-  height: 14px;
+  width: 20px;
+  height: 20px;
   border-radius: 50%;
-  background: #0f9b8e;
-  border: 2px solid #fff;
-  box-shadow: 0 0 6px rgba(15, 155, 142, 0.5);
+  background: radial-gradient(circle at 35% 35%, #fef3c7 0 18%, #fb923c 19% 48%, #dc2626 49% 100%);
+  border: 3px solid #fff;
+  box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.32), 0 0 14px rgba(0, 0, 0, 0.75);
+}
+
+#overlay.offline .streamer-dot,
+#overlay.stale .streamer-dot {
+  opacity: 0.55;
 }

@@ -10,14 +10,16 @@
     <div id="overlay">
       <div id="map"></div>
       <div id="telemetry">
+        <div id="status-badge" class="status-badge status-waiting">Waiting for GPS</div>
         <div class="tel-heading-row">
-          <svg id="heading-arrow" viewBox="0 0 40 40" width="40" height="40">
-            <circle cx="20" cy="20" r="18" fill="none" stroke="rgba(15,155,142,0.4)" stroke-width="1.5" />
-            <polygon points="20,4 16,30 20,24 24,30" fill="#0f9b8e" stroke="#fff" stroke-width="0.5" />
+          <svg id="heading-arrow" class="heading-unknown" viewBox="0 0 40 40" width="42" height="42">
+            <circle cx="20" cy="20" r="18" fill="rgba(15, 23, 42, 0.5)" stroke="rgba(255,255,255,0.55)" stroke-width="1.5" />
+            <polygon points="20,4 16,30 20,24 24,30" fill="#22d3ee" stroke="#fff" stroke-width="0.75" />
           </svg>
           <div class="tel-values">
             <div class="tel-value" id="tel-speed">-- km/h</div>
-            <div class="tel-value" id="tel-alt">-- m</div>
+            <div class="tel-value" id="tel-eta">ETA --</div>
+            <div class="tel-value muted" id="tel-alt">-- m</div>
           </div>
         </div>
         <div class="tel-coords" id="tel-coords">--, --</div>

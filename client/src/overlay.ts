@@ -6,6 +6,11 @@ import { decodePolyline } from "./polyline";
 // URL params for OBS configurability
 const params = new URLSearchParams(window.location.search);
 const zoom = parseFloat(params.get("zoom") ?? "15");
+const followMode = params.get("follow") ?? "streamer"; // streamer | route | trail | off
+const showRoute = params.get("route") !== "0";
+const showTrail = params.get("trail") !== "0";
+const showTelemetry = params.get("telemetry") !== "0";
+const staleAfterMs = Number.parseInt(params.get("staleMs") ?? "30000", 10);
 
 // ── WebSocket ──────────────────────────────────────────────────────────
 
@@ -51,7 +56,18 @@ const map = new maplibregl.Map({
         tileSize: 256,
       },
     },
-    layers: [{ id: "osm", type: "raster", source: "osm" }],
+    layers: [{
+      id: "osm",
+      type: "raster",
+      source: "osm",
+      paint: {
+        "raster-opacity": 0.82,
+        "raster-contrast": 0.18,
+        "raster-saturation": -0.35,
+        "raster-brightness-min": 0.08,
+        "raster-brightness-max": 0.92,
+      },
+    }],
   },
   center: [0, 0],
   zoom,
@@ -64,8 +80,16 @@ const map = new maplibregl.Map({
 // ── Custom layers (re-added on style.load) ────────────────────────────
 
 let routePolyline: string | null = null;
+let routeCoords: [number, number][] = [];
+let routeDurationMin: number | null = null;
 let trailCoords: [number, number][] = [];
 let hasPosition = false;
+let currentPosition: [number, number] | null = null;
+let targetPosition: [number, number] | null = null;
+let markerAnimation: number | null = null;
+let lastLocationAt = 0;
+let lastLocationTimestampMs: number | null = null;
+let lastLiveStatus: boolean | null = null;
 
 function addCustomLayers() {
   if (!map.getSource("trail")) {
@@ -81,7 +105,7 @@ function addCustomLayers() {
       type: "line",
       source: "trail",
       layout: { "line-join": "round", "line-cap": "round" },
-      paint: { "line-color": "#111827", "line-width": 6, "line-opacity": 0.45 },
+      paint: { "line-color": "#020617", "line-width": 9, "line-opacity": 0.72 },
     });
   }
   if (!map.getLayer("trail-line")) {
@@ -90,7 +114,7 @@ function addCustomLayers() {
       type: "line",
       source: "trail",
       layout: { "line-join": "round", "line-cap": "round" },
-      paint: { "line-gradient": warmGradientExpression(), "line-width": 4, "line-opacity": 0.95 },
+      paint: { "line-gradient": warmGradientExpression(), "line-width": 6, "line-opacity": showTrail ? 0.95 : 0 },
     });
   }
 
@@ -132,13 +156,22 @@ function addCustomLayers() {
       data: { type: "FeatureCollection", features: [] },
     });
   }
+  if (!map.getLayer("route-line-casing")) {
+    map.addLayer({
+      id: "route-line-casing",
+      type: "line",
+      source: "route",
+      layout: { "line-join": "round", "line-cap": "round" },
+      paint: { "line-color": "#020617", "line-width": 10, "line-opacity": showRoute ? 0.75 : 0 },
+    });
+  }
   if (!map.getLayer("route-line")) {
     map.addLayer({
       id: "route-line",
       type: "line",
       source: "route",
       layout: { "line-join": "round", "line-cap": "round" },
-      paint: { "line-color": "#0f9b8e", "line-width": 3, "line-opacity": 0.8 },
+      paint: { "line-color": "#14f1d9", "line-width": 6, "line-opacity": showRoute ? 0.92 : 0 },
     });
   }
 
@@ -167,45 +200,76 @@ const streamerMarker = new maplibregl.Marker({ element: dot })
 
 // ── Telemetry DOM ─────────────────────────────────────────────────────
 
+const overlayEl = document.getElementById("overlay")!;
+const telemetryEl = document.getElementById("telemetry")!;
+const statusBadge = document.getElementById("status-badge")!;
 const headingArrow = document.getElementById("heading-arrow")!;
 const telSpeed = document.getElementById("tel-speed")!;
+const telEta = document.getElementById("tel-eta")!;
 const telAlt = document.getElementById("tel-alt")!;
 const telCoords = document.getElementById("tel-coords")!;
+
+if (!showTelemetry) telemetryEl.style.display = "none";
 
 // ── Message handler ───────────────────────────────────────────────────
 
 function handleMessage(msg: ServerMessage) {
   switch (msg.type) {
     case "location": {
+      lastLocationAt = Date.now();
+      lastLocationTimestampMs = msg.timestamp_ms;
+      lastLiveStatus = true;
+      setOverlayStatus("live", "Live GPS");
+
+      const nextPosition: [number, number] = [msg.lon, msg.lat];
+      const previousPosition = targetPosition ?? currentPosition;
+      targetPosition = nextPosition;
+
       if (!hasPosition) {
         hasPosition = true;
-        map.jumpTo({ center: [msg.lon, msg.lat] });
+        currentPosition = nextPosition;
+        streamerMarker.setLngLat(nextPosition);
+        followCamera(nextPosition);
       } else {
-        map.easeTo({ center: [msg.lon, msg.lat], duration: 1000 });
+        animateStreamerTo(nextPosition);
+        if (followMode === "streamer") map.easeTo({ center: nextPosition, duration: 1000 });
       }
-      streamerMarker.setLngLat([msg.lon, msg.lat]);
 
-      if (msg.heading != null) {
-        headingArrow.style.transform = `rotate(${msg.heading}deg)`;
+      const heading = msg.heading ?? (previousPosition ? bearingDegrees(previousPosition, nextPosition) : null);
+      if (heading != null && Number.isFinite(heading)) {
+        headingArrow.style.transform = `rotate(${heading}deg)`;
+        headingArrow.classList.remove("heading-unknown");
+      } else {
+        headingArrow.classList.add("heading-unknown");
       }
 
       telSpeed.textContent =
         msg.speed != null ? `${(msg.speed * 3.6).toFixed(1)} km/h` : "-- km/h";
       telAlt.textContent =
-        msg.altitude != null ? `${Math.round(msg.altitude)} m` : "-- m";
+        msg.altitude != null ? `${Math.round(msg.altitude)} m alt` : "-- m alt";
       telCoords.textContent = `${msg.lat.toFixed(4)}, ${msg.lon.toFixed(4)}`;
       break;
     }
 
     case "route_result": {
       routePolyline = msg.polyline;
+      routeDurationMin = msg.duration_min;
+      telEta.textContent = `ETA ${formatEta(routeDurationMin)}`;
       updateRouteLayer();
+      if (followMode === "route") fitCoords(routeCoords, { bottom: 40 });
       break;
     }
 
     case "trail": {
       trailCoords = msg.coords as [number, number][];
       updateTrailLayer();
+      if (followMode === "trail") fitCoords(trailCoords, { bottom: 40 });
+      break;
+    }
+
+    case "live_status": {
+      lastLiveStatus = msg.live;
+      if (!msg.live) setOverlayStatus("offline", "Offline");
       break;
     }
   }
@@ -214,11 +278,11 @@ function handleMessage(msg: ServerMessage) {
 function updateRouteLayer() {
   const src = map.getSource("route") as maplibregl.GeoJSONSource | undefined;
   if (!src || !routePolyline) return;
-  const coords = decodePolyline(routePolyline);
+  routeCoords = decodePolyline(routePolyline);
   src.setData({
     type: "Feature",
     properties: {},
-    geometry: { type: "LineString", coordinates: coords },
+    geometry: { type: "LineString", coordinates: routeCoords },
   });
 }
 
@@ -238,6 +302,83 @@ function updateTrailLayer() {
   });
   endpointSrc?.setData(warmEndpointFeatureCollection(trailCoords));
 }
+
+function animateStreamerTo(next: [number, number]) {
+  const start = currentPosition ?? next;
+  const startedAt = performance.now();
+  const duration = 1200;
+  if (markerAnimation != null) cancelAnimationFrame(markerAnimation);
+
+  const frame = (now: number) => {
+    const t = Math.min(1, (now - startedAt) / duration);
+    const eased = 1 - Math.pow(1 - t, 3);
+    const pos: [number, number] = [
+      start[0] + (next[0] - start[0]) * eased,
+      start[1] + (next[1] - start[1]) * eased,
+    ];
+    currentPosition = pos;
+    streamerMarker.setLngLat(pos);
+    if (t < 1) markerAnimation = requestAnimationFrame(frame);
+  };
+  markerAnimation = requestAnimationFrame(frame);
+}
+
+function followCamera(center: [number, number]) {
+  if (followMode !== "off") map.jumpTo({ center });
+}
+
+function fitCoords(coords: [number, number][], paddingOverrides: Partial<maplibregl.PaddingOptions> = {}) {
+  if (coords.length < 2 || followMode === "off") return;
+  const bounds = coords.reduce(
+    (b, coord) => b.extend(coord),
+    new maplibregl.LngLatBounds(coords[0], coords[0]),
+  );
+  map.fitBounds(bounds, {
+    padding: { top: 80, right: 80, bottom: 80, left: 80, ...paddingOverrides },
+    maxZoom: zoom,
+    duration: 800,
+  });
+}
+
+function bearingDegrees(from: [number, number], to: [number, number]): number | null {
+  const [lon1, lat1] = from.map((v) => v * Math.PI / 180) as [number, number];
+  const [lon2, lat2] = to.map((v) => v * Math.PI / 180) as [number, number];
+  const dLon = lon2 - lon1;
+  const y = Math.sin(dLon) * Math.cos(lat2);
+  const x = Math.cos(lat1) * Math.sin(lat2) - Math.sin(lat1) * Math.cos(lat2) * Math.cos(dLon);
+  const bearing = (Math.atan2(y, x) * 180 / Math.PI + 360) % 360;
+  return Number.isFinite(bearing) ? bearing : null;
+}
+
+function formatEta(minutes: number | null): string {
+  if (minutes == null || !Number.isFinite(minutes)) return "--";
+  if (minutes < 1) return "<1m";
+  if (minutes < 60) return `${Math.round(minutes)}m`;
+  const hours = Math.floor(minutes / 60);
+  const mins = Math.round(minutes % 60);
+  return `${hours}h ${mins}m`;
+}
+
+function setOverlayStatus(kind: "live" | "stale" | "offline" | "waiting", label: string) {
+  overlayEl.classList.toggle("stale", kind === "stale");
+  overlayEl.classList.toggle("offline", kind === "offline");
+  statusBadge.className = `status-badge status-${kind}`;
+  statusBadge.textContent = label;
+}
+
+setInterval(() => {
+  if (lastLiveStatus === false) return;
+  if (!lastLocationAt) {
+    setOverlayStatus("waiting", "Waiting for GPS");
+    return;
+  }
+  const age = Date.now() - lastLocationAt;
+  if (age > staleAfterMs) {
+    setOverlayStatus("stale", `GPS stale ${Math.round(age / 1000)}s`);
+  } else if (lastLocationTimestampMs) {
+    setOverlayStatus("live", "Live GPS");
+  }
+}, 1000);
 
 function warmGradientExpression(): maplibregl.ExpressionSpecification {
   return [
