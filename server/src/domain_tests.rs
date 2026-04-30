@@ -4,7 +4,9 @@ mod tests {
 
     use crate::companion::TrailAccumulator;
     use crate::history::{TrailEdits, apply_trail_edits};
-    use crate::types::BreadcrumbPoint;
+    use crate::types::{BreadcrumbPoint, Waypoint};
+    use crate::ws::remaining_waypoints_for_live_route;
+    use uuid::Uuid;
 
     fn point(timestamp_ms: i64, lon: f64, lat: f64) -> BreadcrumbPoint {
         BreadcrumbPoint {
@@ -16,6 +18,15 @@ mod tests {
             altitude_accuracy: None,
             heading: None,
             speed: None,
+        }
+    }
+
+    fn waypoint(label: &str, lat: f64, lon: f64) -> Waypoint {
+        Waypoint {
+            id: Uuid::new_v4(),
+            lat,
+            lon,
+            label: label.to_string(),
         }
     }
 
@@ -55,6 +66,44 @@ mod tests {
         assert!(!trail.insert_sorted(point(1000, 2.0, 2.0)));
 
         assert_eq!(trail.coords(), vec![[1.0, 1.0], [2.0, 2.0]]);
+    }
+
+    #[test]
+    fn live_route_suffix_keeps_first_waypoint_before_route_start() {
+        let waypoints = vec![
+            waypoint("1", 47.0, -122.0),
+            waypoint("2", 47.0, -121.99),
+            waypoint("3", 47.0, -121.98),
+        ];
+
+        let remaining = remaining_waypoints_for_live_route(47.0, -122.002, &waypoints);
+
+        assert_eq!(remaining.iter().map(|w| w.label.as_str()).collect::<Vec<_>>(), vec!["1", "2", "3"]);
+    }
+
+    #[test]
+    fn live_route_suffix_skips_passed_waypoints_on_current_segment() {
+        let waypoints = vec![
+            waypoint("1", 47.0, -122.0),
+            waypoint("2", 47.0, -121.99),
+            waypoint("3", 47.0, -121.98),
+        ];
+
+        let remaining = remaining_waypoints_for_live_route(47.0, -121.995, &waypoints);
+
+        assert_eq!(remaining.iter().map(|w| w.label.as_str()).collect::<Vec<_>>(), vec!["2", "3"]);
+    }
+
+    #[test]
+    fn live_route_suffix_at_end_of_two_point_route_targets_only_end() {
+        let waypoints = vec![
+            waypoint("1", 47.0, -122.0),
+            waypoint("2", 47.0, -121.99),
+        ];
+
+        let remaining = remaining_waypoints_for_live_route(47.0, -121.99, &waypoints);
+
+        assert_eq!(remaining.iter().map(|w| w.label.as_str()).collect::<Vec<_>>(), vec!["2"]);
     }
 
     #[test]

@@ -182,6 +182,8 @@ pub async fn location_handler(
                 loc.valid = true;
             }
 
+            maybe_auto_complete_first_waypoint(&state, lat, lon).await;
+
             if coords.len() >= 2 {
                 let _ = state.tx.send(crate::types::ServerMessage::Trail {
                     coords: coords.clone(),
@@ -270,6 +272,80 @@ async fn finalize_trail(state: &AppState, trail: &TrailAccumulator, reason: &str
             ).await;
         }
     }
+}
+
+async fn maybe_auto_complete_first_waypoint(state: &AppState, lat: f64, lon: f64) {
+    if !state.auto_complete.enabled {
+        return;
+    }
+
+    let first = { state.waypoints.read().await.first().cloned() };
+    let Some(first) = first else {
+        *state.auto_complete_candidate.lock().await = None;
+        return;
+    };
+
+    let distance_m = haversine_m(lat, lon, first.lat, first.lon);
+    if distance_m > state.auto_complete.radius_m {
+        let mut candidate = state.auto_complete_candidate.lock().await;
+        if candidate
+            .as_ref()
+            .is_some_and(|candidate| candidate.waypoint_id == first.id)
+        {
+            *candidate = None;
+        }
+        return;
+    }
+
+    let should_complete = {
+        let mut candidate = state.auto_complete_candidate.lock().await;
+        match candidate.as_ref() {
+            Some(candidate)
+                if candidate.waypoint_id == first.id
+                    && candidate.since.elapsed() >= state.auto_complete.dwell =>
+            {
+                true
+            }
+            Some(candidate) if candidate.waypoint_id == first.id => false,
+            _ => {
+                *candidate = Some(crate::ws::AutoCompleteCandidate {
+                    waypoint_id: first.id,
+                    since: Instant::now(),
+                });
+                false
+            }
+        }
+    };
+
+    if !should_complete {
+        return;
+    }
+
+    let mut wps = state.waypoints.write().await;
+    if wps.first().is_some_and(|w| w.id == first.id) {
+        crate::ws::push_undo(&state.undo_stack, &wps).await;
+        let completed = wps.remove(0);
+        tracing::info!(
+            "auto-completed waypoint '{}' ({:.1}m away)",
+            completed.label,
+            distance_m
+        );
+        let _ = state.tx.send(crate::types::ServerMessage::WaypointList {
+            waypoints: wps.clone(),
+        });
+    }
+    *state.auto_complete_candidate.lock().await = None;
+}
+
+fn haversine_m(lat1: f64, lon1: f64, lat2: f64, lon2: f64) -> f64 {
+    let r = 6_371_000.0;
+    let dlat = (lat2 - lat1).to_radians();
+    let dlon = (lon2 - lon1).to_radians();
+    let lat1 = lat1.to_radians();
+    let lat2 = lat2.to_radians();
+    let a = (dlat / 2.0).sin().powi(2)
+        + lat1.cos() * lat2.cos() * (dlon / 2.0).sin().powi(2);
+    2.0 * r * a.sqrt().asin()
 }
 
 pub async fn status_handler(

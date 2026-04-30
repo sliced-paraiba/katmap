@@ -53,6 +53,21 @@ async fn main() {
         .unwrap_or(30);
     tracing::info!("Snipe route limit: {snipe_route_limit_per_minute}/minute");
 
+    let auto_complete_waypoints = std::env::var("AUTO_COMPLETE_WAYPOINTS")
+        .ok()
+        .is_some_and(|v| matches!(v.as_str(), "1" | "true" | "TRUE" | "yes" | "YES"));
+    let auto_complete_radius_m: f64 = std::env::var("AUTO_COMPLETE_WAYPOINT_RADIUS_M")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(35.0);
+    let auto_complete_dwell_s: u64 = std::env::var("AUTO_COMPLETE_WAYPOINT_DWELL_S")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(10);
+    tracing::info!(
+        "Auto-complete waypoints: enabled={auto_complete_waypoints} radius={auto_complete_radius_m}m dwell={auto_complete_dwell_s}s"
+    );
+
     let companion_api_key =
         std::env::var("COMPANION_API_KEY").expect("COMPANION_API_KEY is required");
     tracing::info!("Companion API key configured");
@@ -100,6 +115,12 @@ async fn main() {
         live_location: Arc::new(RwLock::new(ws::LiveLocation::default())),
         snipe_route_limiter: Arc::new(snipe::SnipeRouteLimiter::new(snipe_route_limit_per_minute)),
         recent_location_pushes: debug::empty_recent_location_pushes(),
+        auto_complete: ws::AutoCompleteConfig {
+            enabled: auto_complete_waypoints,
+            radius_m: auto_complete_radius_m,
+            dwell: std::time::Duration::from_secs(auto_complete_dwell_s),
+        },
+        auto_complete_candidate: Arc::new(Mutex::new(None)),
     };
 
     // Spawn stale session detector

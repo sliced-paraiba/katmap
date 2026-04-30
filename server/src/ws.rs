@@ -1,5 +1,6 @@
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use tokio::time::{Duration, Instant};
 
 use axum::{
     extract::{
@@ -29,6 +30,19 @@ pub type WaypointState = Arc<RwLock<Vec<Waypoint>>>;
 pub type UndoStack = Arc<RwLock<Vec<Vec<Waypoint>>>>;
 pub type ConnectedCount = Arc<AtomicUsize>;
 
+#[derive(Clone)]
+pub struct AutoCompleteConfig {
+    pub enabled: bool,
+    pub radius_m: f64,
+    pub dwell: Duration,
+}
+
+#[derive(Clone)]
+pub struct AutoCompleteCandidate {
+    pub waypoint_id: Uuid,
+    pub since: Instant,
+}
+
 /// Maximum number of undo entries kept in memory.
 const UNDO_STACK_MAX: usize = 50;
 
@@ -56,6 +70,8 @@ pub struct AppState {
     pub live_location: Arc<RwLock<LiveLocation>>,
     pub snipe_route_limiter: Arc<crate::snipe::SnipeRouteLimiter>,
     pub recent_location_pushes: crate::debug::RecentLocationPushes,
+    pub auto_complete: AutoCompleteConfig,
+    pub auto_complete_candidate: Arc<Mutex<Option<AutoCompleteCandidate>>>,
 }
 
 pub async fn ws_handler(
@@ -328,20 +344,27 @@ async fn handle_client_message(
             if wps.is_empty() {
                 return Ok(());
             }
+            let remaining_wps = remaining_waypoints_for_live_route(origin_lat, origin_lon, &wps);
+            if remaining_wps.is_empty() {
+                return Ok(());
+            }
 
-            // Build a temporary waypoint list: [current_pos, ...all_waypoints]
+            // Build a temporary waypoint list with a virtual waypoint 0 for the streamer.
+            // Only include the route suffix that appears to be ahead of the streamer;
+            // otherwise ETA can incorrectly route back to already-passed waypoints.
+            let remaining_count = remaining_wps.len();
             let mut live_wps = vec![Waypoint {
                 id: Uuid::new_v4(),
                 lat: origin_lat,
                 lon: origin_lon,
                 label: "Live position".into(),
             }];
-            live_wps.extend(wps);
+            live_wps.extend(remaining_wps);
 
             let tx = tx.clone();
             let url = valhalla_url.to_string();
             tokio::spawn(async move {
-                tracing::info!("Calculating live route from ({}, {}) through {} waypoints at {:.1} km/h", origin_lat, origin_lon, live_wps.len() - 1, speed_kmh);
+                tracing::info!("Calculating live route from ({}, {}) through {} remaining waypoints at {:.1} km/h", origin_lat, origin_lon, remaining_count, speed_kmh);
                 match crate::valhalla::calculate_route(&live_wps, &url, speed_kmh).await {
                     Ok(result) => {
                         let _ = tx.send(ServerMessage::LiveRouteResult {
@@ -363,8 +386,78 @@ async fn handle_client_message(
     Ok(())
 }
 
+pub(crate) fn remaining_waypoints_for_live_route(
+    origin_lat: f64,
+    origin_lon: f64,
+    waypoints: &[Waypoint],
+) -> Vec<Waypoint> {
+    if waypoints.len() <= 1 {
+        return waypoints.to_vec();
+    }
+
+    let origin = (origin_lat, origin_lon);
+    let mut best_segment_idx = 0usize;
+    let mut best_t = 0.0;
+    let mut best_distance_m = f64::INFINITY;
+
+    for (idx, pair) in waypoints.windows(2).enumerate() {
+        let a = (pair[0].lat, pair[0].lon);
+        let b = (pair[1].lat, pair[1].lon);
+        let (t, distance_m) = project_point_to_segment_m(origin, a, b);
+        if distance_m < best_distance_m {
+            best_distance_m = distance_m;
+            best_segment_idx = idx;
+            best_t = t;
+        }
+    }
+
+    // If the streamer projects near/beyond the beginning of a segment, keep that
+    // segment's start waypoint. Otherwise, the next waypoint is the remaining target.
+    let start_idx = if best_t < 0.15 {
+        best_segment_idx
+    } else {
+        best_segment_idx + 1
+    };
+
+    waypoints[start_idx.min(waypoints.len() - 1)..].to_vec()
+}
+
+fn project_point_to_segment_m(
+    point: (f64, f64),
+    segment_start: (f64, f64),
+    segment_end: (f64, f64),
+) -> (f64, f64) {
+    let meters_per_deg_lat = 111_320.0;
+    let ref_lat = ((point.0 + segment_start.0 + segment_end.0) / 3.0).to_radians();
+    let meters_per_deg_lon = meters_per_deg_lat * ref_lat.cos().abs().max(0.01);
+
+    let to_xy = |lat: f64, lon: f64| -> (f64, f64) {
+        (
+            (lon - point.1) * meters_per_deg_lon,
+            (lat - point.0) * meters_per_deg_lat,
+        )
+    };
+
+    let p = (0.0, 0.0);
+    let a = to_xy(segment_start.0, segment_start.1);
+    let b = to_xy(segment_end.0, segment_end.1);
+    let ab = (b.0 - a.0, b.1 - a.1);
+    let ap = (p.0 - a.0, p.1 - a.1);
+    let ab_len2 = ab.0 * ab.0 + ab.1 * ab.1;
+    if ab_len2 <= f64::EPSILON {
+        return (0.0, (ap.0 * ap.0 + ap.1 * ap.1).sqrt());
+    }
+
+    let raw_t = (ap.0 * ab.0 + ap.1 * ab.1) / ab_len2;
+    let t = raw_t.clamp(0.0, 1.0);
+    let closest = (a.0 + ab.0 * t, a.1 + ab.1 * t);
+    let dx = p.0 - closest.0;
+    let dy = p.1 - closest.1;
+    (t, (dx * dx + dy * dy).sqrt())
+}
+
 /// Push a snapshot of the current waypoints onto the undo stack, capping at UNDO_STACK_MAX.
-async fn push_undo(undo_stack: &UndoStack, current: &[Waypoint]) {
+pub(crate) async fn push_undo(undo_stack: &UndoStack, current: &[Waypoint]) {
     let mut stack = undo_stack.write().await;
     stack.push(current.to_vec());
     if stack.len() > UNDO_STACK_MAX {
