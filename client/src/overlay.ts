@@ -2,6 +2,7 @@ import maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import { ServerMessage } from "./types";
 import { decodePolyline } from "./polyline";
+import { strings } from "./strings";
 
 // URL params for OBS configurability
 const params = new URLSearchParams(window.location.search);
@@ -219,7 +220,7 @@ function handleMessage(msg: ServerMessage) {
       lastLocationAt = Date.now();
       lastLocationTimestampMs = msg.timestamp_ms;
       lastLiveStatus = true;
-      setOverlayStatus("live", "Live GPS");
+      setOverlayStatus("live", strings.overlay.liveGps);
 
       const nextPosition: [number, number] = [msg.lon, msg.lat];
       const previousPosition = targetPosition ?? currentPosition;
@@ -244,9 +245,9 @@ function handleMessage(msg: ServerMessage) {
       }
 
       telSpeed.textContent =
-        msg.speed != null ? `${(msg.speed * 3.6).toFixed(1)} km/h` : "-- km/h";
+        msg.speed != null ? strings.overlay.speed((msg.speed * 3.6).toFixed(1)) : strings.overlay.speedUnknown;
       telAlt.textContent =
-        msg.altitude != null ? `${Math.round(msg.altitude)} m alt` : "-- m alt";
+        msg.altitude != null ? strings.overlay.altitude(`${Math.round(msg.altitude)}`) : strings.overlay.altUnknown;
       telCoords.textContent = `${msg.lat.toFixed(4)}, ${msg.lon.toFixed(4)}`;
       break;
     }
@@ -254,7 +255,7 @@ function handleMessage(msg: ServerMessage) {
     case "route_result": {
       routePolyline = msg.polyline;
       routeDurationMin = msg.duration_min;
-      telEta.textContent = `ETA ${formatEta(routeDurationMin)}`;
+      telEta.textContent = strings.overlay.etaLabel(formatEta(routeDurationMin));
       updateRouteLayer();
       if (followMode === "route") fitCoords(routeCoords, { bottom: 40 });
       break;
@@ -269,7 +270,7 @@ function handleMessage(msg: ServerMessage) {
 
     case "live_status": {
       lastLiveStatus = msg.live;
-      if (!msg.live) setOverlayStatus("offline", "Offline");
+      if (!msg.live) setOverlayStatus("offline", strings.overlay.offline);
       break;
     }
   }
@@ -369,14 +370,14 @@ function setOverlayStatus(kind: "live" | "stale" | "offline" | "waiting", label:
 setInterval(() => {
   if (lastLiveStatus === false) return;
   if (!lastLocationAt) {
-    setOverlayStatus("waiting", "Waiting for GPS");
+    setOverlayStatus("waiting", strings.overlay.waitingForGps);
     return;
   }
   const age = Date.now() - lastLocationAt;
   if (age > staleAfterMs) {
-    setOverlayStatus("stale", `GPS stale ${Math.round(age / 1000)}s`);
+    setOverlayStatus("stale", strings.overlay.staleGps(Math.round(age / 1000)));
   } else if (lastLocationTimestampMs) {
-    setOverlayStatus("live", "Live GPS");
+    setOverlayStatus("live", strings.overlay.liveGps);
   }
 }, 1000);
 

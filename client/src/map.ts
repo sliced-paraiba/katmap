@@ -3,6 +3,7 @@ import "maplibre-gl/dist/maplibre-gl.css";
 import { Protocol } from "pmtiles";
 import { AppState } from "./state";
 import { ClientMessage, Waypoint } from "./types";
+import { strings } from "./strings";
 
 // Seattle center as ultimate fallback
 const DEFAULT_CENTER: [number, number] = [-122.3321, 47.6062];
@@ -442,38 +443,38 @@ export class MapView {
       const isLast = allIds[allIds.length - 1] === wp.id;
 
       if (!isFirst) {
-        this.addMenuItem(menu, "Set as start", () => {
+        this.addMenuItem(menu, strings.contextMenu.setAsStart, () => {
           const ordered = [wp.id, ...allIds.filter((id) => id !== wp.id)];
           this.onSend({ type: "reorder_waypoints", ordered_ids: ordered });
         });
       }
       if (!isLast) {
-        this.addMenuItem(menu, "Set as end", () => {
+        this.addMenuItem(menu, strings.contextMenu.setAsEnd, () => {
           const ordered = [...allIds.filter((id) => id !== wp.id), wp.id];
           this.onSend({ type: "reorder_waypoints", ordered_ids: ordered });
         });
       }
       this.addMenuSeparator(menu);
-      this.addMenuItem(menu, isActive ? "Mark inactive" : "Mark active", () => {
+      this.addMenuItem(menu, isActive ? strings.contextMenu.markInactive : strings.contextMenu.markActive, () => {
         this.onSend({ type: "set_waypoint_active", id: wp.id, active: !isActive });
       });
-      this.addMenuItem(menu, "Open in Google Maps", () => {
+      this.addMenuItem(menu, strings.contextMenu.openInGoogleMaps, () => {
         window.open(`https://www.google.com/maps?q=${wp.lat},${wp.lon}`, "_blank");
       });
       this.addMenuSeparator(menu);
-      this.addMenuItem(menu, "Delete node", () => {
+      this.addMenuItem(menu, strings.contextMenu.deleteNode, () => {
         this.onSend({ type: "remove_waypoint", id: wp.id });
       }, true);
     } else {
-      this.addMenuItem(menu, "Add waypoint here", async () => {
+      this.addMenuItem(menu, strings.contextMenu.addWaypointHere, async () => {
         const { lat, lon } = target;
         const label =
           (await reverseGeocode(lat, lon)) ??
-          `Stop ${this.state.waypoints.length + 1}`;
+          strings.map.fallbackStopLabel(this.state.waypoints.length + 1);
         this.onSend({ type: "add_waypoint", lat, lon, label });
       });
       this.addMenuSeparator(menu);
-      this.addMenuItem(menu, "Open in Google Maps", () => {
+      this.addMenuItem(menu, strings.contextMenu.openInGoogleMaps, () => {
         window.open(`https://www.google.com/maps?q=${target.lat},${target.lon}`, "_blank");
       });
     }

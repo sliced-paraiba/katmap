@@ -2,6 +2,7 @@ import { Connection } from "./net";
 import { AppState } from "./state";
 import { MapView, Theme } from "./map";
 import { Sidebar } from "./sidebar";
+import { strings } from "./strings";
 
 const state = new AppState();
 
@@ -10,9 +11,9 @@ const conn = new Connection(
   (connected) => {
     state.setConnected(connected);
     if (!connected) {
-      showToast("Disconnected from server. Reconnecting...", "error");
+      showToast(strings.toast.disconnected, "error");
     } else {
-      showToast("Connected", "success");
+      showToast(strings.toast.connected, "success");
     }
   }
 );
@@ -24,6 +25,14 @@ const themeSelect = document.getElementById("theme-select") as HTMLSelectElement
 
 const VALID_THEMES: Theme[] = ["dark", "light", "bright", "fiord", "toner", "basic", "neon", "midnight", "raster"];
 const STORAGE_KEY = "katmap-theme";
+
+// Populate theme options from strings
+for (const key of VALID_THEMES) {
+  const opt = document.createElement("option");
+  opt.value = key;
+  opt.textContent = strings.themes[key as keyof typeof strings.themes];
+  themeSelect.appendChild(opt);
+}
 
 function loadStoredTheme(): Theme {
   try {

@@ -4,6 +4,7 @@ import { OpenLocationCode } from "open-location-code";
 import { AppState } from "./state";
 import { ClientMessage, Maneuver } from "./types";
 import { reverseGeocode } from "./map";
+import { strings } from "./strings";
 
 const olc = new OpenLocationCode();
 
@@ -264,21 +265,21 @@ export class Sidebar {
     // Build DOM
     this.container.innerHTML = `
       <div class="sidebar-header">
-        <h1>KatMap <span class="connection-status disconnected" id="conn-status" title="Disconnected"></span></h1>
+        <h1>${strings.sidebar.headerTitle} <span class="connection-status disconnected" id="conn-status" title="${strings.sidebar.disconnected}"></span></h1>
         <div class="streamer-status" id="streamer-status"></div>
         <button class="add-position-btn" id="add-position-btn" style="display:none">
-          + Add streamer location
+          ${strings.sidebar.addStreamerLocation}
         </button>
       </div>
       <div class="social-links" id="social-links"></div>
       <div class="waypoint-actions" id="waypoint-actions">
-        <button class="action-btn undo-btn" id="undo-btn" title="Undo (Ctrl+Z)">&#x21B6; Undo</button>
-        <button class="action-btn delete-all-btn" id="delete-all-btn" title="Delete all waypoints">&#x2715; Delete all</button>
-        <button class="action-btn history-btn" id="history-btn" title="Browse past streams">&#x1F4C1; History</button>
+        <button class="action-btn undo-btn" id="undo-btn" title="${strings.sidebar.undoTitle}">${strings.sidebar.undo}</button>
+        <button class="action-btn delete-all-btn" id="delete-all-btn" title="${strings.sidebar.deleteAllTitle}">${strings.sidebar.deleteAll}</button>
+        <button class="action-btn history-btn" id="history-btn" title="${strings.sidebar.historyTitle}">${strings.sidebar.history}</button>
       </div>
       <div class="history-panel" id="history-panel" style="display:none">
         <div class="history-header">
-          <span>Past Streams</span>
+          <span>${strings.sidebar.pastStreams}</span>
           <button class="history-close" id="history-close-btn">&times;</button>
         </div>
         <div class="history-list" id="history-list"></div>
@@ -288,14 +289,14 @@ export class Sidebar {
           type="text"
           id="waypoint-input"
           class="waypoint-input"
-          placeholder="lat, lon &nbsp;&#x2022;&nbsp; Plus code &nbsp;&#x2022;&nbsp; Maps link"
-          title="Add waypoint by coordinates, Plus Code, or Google Maps URL"
+          placeholder="${strings.sidebar.inputPlaceholder}"
+          title="${strings.sidebar.inputTitle}"
           autocomplete="off"
           autocorrect="off"
           autocapitalize="off"
           spellcheck="false"
         />
-        <button class="waypoint-input-btn" id="waypoint-input-btn" title="Add waypoint">+</button>
+        <button class="waypoint-input-btn" id="waypoint-input-btn" title="${strings.sidebar.inputButtonTitle}">${strings.sidebar.inputButton}</button>
       </div>
       <div class="waypoint-list" id="waypoint-list"></div>
       <div class="route-info" id="route-info"></div>
@@ -366,7 +367,7 @@ export class Sidebar {
       if (isGoogleShortLink(raw)) {
         coords = await resolveShortLink(raw);
         if (!coords) {
-          showToast("Couldn't resolve that Google Maps link", "error");
+          showToast(strings.sidebar.cantResolveLink, "error");
           return;
         }
       } else {
@@ -375,21 +376,21 @@ export class Sidebar {
         coords = parseInput(raw, refLat, refLon);
 
         if (!coords && looksLikePlusCode(raw) && (refLat === undefined || refLon === undefined)) {
-          showToast("Short Plus Codes need a reference location — streamer must be live", "error");
+          showToast(strings.sidebar.shortPlusCodeNeedsRef, "error");
           return;
         }
 
         if (!coords) {
-          showToast("Couldn't parse that — try lat, lon or a Google Maps link", "error");
+          showToast(strings.sidebar.cantParseInput, "error");
           return;
         }
       }
 
       const { lat, lon } = coords;
-      const label = (await reverseGeocode(lat, lon)) ?? `Stop ${this.state.waypoints.length + 1}`;
+      const label = (await reverseGeocode(lat, lon)) ?? strings.sidebar.stopLabel(this.state.waypoints.length + 1);
       this.onSend({ type: "add_waypoint", lat, lon, label });
       this.waypointInputEl.value = "";
-      showToast(`Added: ${label}`, "success");
+      showToast(strings.sidebar.addedToast(label), "success");
     } finally {
       this.isAddingWaypoint = false;
       this.waypointInputBtn.disabled = false;
@@ -403,7 +404,7 @@ export class Sidebar {
 
     const now = Date.now();
     if (now - this.lastAddPositionTime < 5000) {
-      showToast("Wait a moment before adding again", "error");
+      showToast(strings.sidebar.waitBeforeAdding, "error");
       return;
     }
     this.lastAddPositionTime = now;
@@ -444,13 +445,13 @@ export class Sidebar {
     const links: { href: string; label: string; icon: string }[] = [];
 
     if (discord) {
-      links.push({ href: "/discord", label: "Discord", icon: "💬" });
+      links.push({ href: "/discord", label: strings.social.discord, icon: strings.social.discordIcon });
     }
     if (kick) {
-      links.push({ href: kick, label: "Kick", icon: "▶️" });
+      links.push({ href: kick, label: strings.social.kick, icon: strings.social.kickIcon });
     }
     if (twitch) {
-      links.push({ href: twitch, label: "Twitch", icon: "📺" });
+      links.push({ href: twitch, label: strings.social.twitch, icon: strings.social.twitchIcon });
     }
 
     if (links.length === 0) {
@@ -469,15 +470,15 @@ export class Sidebar {
 
     // Update connection status
     this.statusDot.className = `connection-status ${this.state.connected ? "connected" : "disconnected"}`;
-    this.statusDot.title = this.state.connected ? "Connected" : "Disconnected";
+    this.statusDot.title = this.state.connected ? strings.sidebar.connected : strings.sidebar.disconnected;
 
     // Update streamer status bar
     if (this.state.live) {
-      this.streamerStatusEl.textContent = "Streamer is live";
+      this.streamerStatusEl.textContent = strings.sidebar.streamerLive;
       this.streamerStatusEl.className = "streamer-status streamer-live";
       this.addPositionBtn.style.display = loc ? "block" : "none";
     } else {
-      this.streamerStatusEl.textContent = "Streamer is offline";
+      this.streamerStatusEl.textContent = strings.sidebar.streamerOffline;
       this.streamerStatusEl.className = "streamer-status streamer-offline";
       this.addPositionBtn.style.display = "none";
     }
@@ -489,8 +490,7 @@ export class Sidebar {
     if (waypoints.length === 0) {
       this.listEl.innerHTML = `
         <div class="empty-state">
-          Click on the map or use the input above to add waypoints.<br>
-          Drag waypoints to reorder. Route calculates automatically.
+          ${strings.sidebar.emptyState}
         </div>
       `;
       this.sortable?.destroy();
@@ -506,13 +506,13 @@ export class Sidebar {
         <div class="waypoint-item ${wp.active === false ? "waypoint-inactive" : ""}" data-id="${wp.id}">
           <span class="waypoint-index">${i + 1}</span>
           <div class="waypoint-info">
-            <div class="waypoint-label" data-id="${wp.id}" title="Click to rename">${escapeHtml(wp.label)}</div>
-            <div class="waypoint-coords">${wp.lat.toFixed(4)}, ${wp.lon.toFixed(4)}${wp.active === false ? " · inactive" : ""}</div>
+            <div class="waypoint-label" data-id="${wp.id}" title="${strings.waypoint.labelEditTitle}">${escapeHtml(wp.label)}</div>
+            <div class="waypoint-coords">${wp.lat.toFixed(4)}, ${wp.lon.toFixed(4)}${wp.active === false ? ` \u00B7 ${strings.waypoint.inactive}` : ""}</div>
             <div class="waypoint-actions-row">
-              ${multipleWaypoints && !isFirst ? `<button class="wp-action-btn wp-set-start" data-id="${wp.id}" title="Set as start">&#x25B2; Start</button>` : ""}
-              ${multipleWaypoints && !isLast ? `<button class="wp-action-btn wp-set-end" data-id="${wp.id}" title="Set as end">&#x25BC; End</button>` : ""}
-              <button class="wp-action-btn wp-toggle-active" data-id="${wp.id}" data-active="${wp.active !== false}" title="${wp.active === false ? "Include in route" : "Exclude from route"}">${wp.active === false ? "Activate" : "Deactivate"}</button>
-              <button class="wp-action-btn wp-open-gmaps" data-lat="${wp.lat}" data-lon="${wp.lon}" title="Open in Google Maps">&#x1F5FA; Maps</button>
+              ${multipleWaypoints && !isFirst ? `<button class="wp-action-btn wp-set-start" data-id="${wp.id}" title="${strings.waypoint.startTitle}">${strings.waypoint.start}</button>` : ""}
+              ${multipleWaypoints && !isLast ? `<button class="wp-action-btn wp-set-end" data-id="${wp.id}" title="${strings.waypoint.endTitle}">${strings.waypoint.end}</button>` : ""}
+              <button class="wp-action-btn wp-toggle-active" data-id="${wp.id}" data-active="${wp.active !== false}" title="${wp.active === false ? strings.waypoint.includeTitle : strings.waypoint.excludeTitle}">${wp.active === false ? strings.waypoint.activate : strings.waypoint.deactivate}</button>
+              <button class="wp-action-btn wp-open-gmaps" data-lat="${wp.lat}" data-lon="${wp.lon}" title="${strings.waypoint.mapsTitle}">${strings.waypoint.maps}</button>
             </div>
           </div>
           <button class="waypoint-remove" data-id="${wp.id}" title="Remove">&times;</button>
@@ -651,7 +651,7 @@ export class Sidebar {
 
     if (!route) {
       if (this.state.waypoints.length >= 2) {
-        this.routeInfoEl.innerHTML = `<div class="route-calculating">Calculating route...</div>`;
+        this.routeInfoEl.innerHTML = `<div class="route-calculating">${strings.route.calculating}</div>`;
       } else {
         this.routeInfoEl.innerHTML = "";
       }
@@ -660,7 +660,7 @@ export class Sidebar {
 
     let html = `
       <div class="route-summary">
-        ${route.distance_km.toFixed(1)} km &middot; ${Math.round(route.duration_min)} min
+        ${strings.route.summary(route.distance_km.toFixed(1), String(Math.round(route.duration_min)))}
       </div>
     `;
 
@@ -674,16 +674,16 @@ export class Sidebar {
         <div class="live-eta">
           <div class="live-eta-header">
             <span class="live-dot"></span>
-            Live ETA
+            ${strings.route.liveEtaHeader}
           </div>
           <div class="live-eta-stats">
-            <span>${live.distance_km.toFixed(1)} km left</span>
+            <span>${strings.route.kmLeft(live.distance_km.toFixed(1))}</span>
             <span>&middot;</span>
-            <span>${Math.round(live.duration_min)} min</span>
+            <span>${strings.route.minutes(String(Math.round(live.duration_min)))}</span>
             <span>&middot;</span>
-            <span>${live.speed_kmh.toFixed(1)} km/h</span>
+            <span>${strings.route.speed(live.speed_kmh.toFixed(1))}</span>
           </div>
-          ${saved > 0.5 ? `<div class="live-eta-saved">${savedPct}% complete, ${Math.round(saved)} min saved</div>` : ""}
+          ${saved > 0.5 ? `<div class="live-eta-saved">${strings.route.saved(savedPct, Math.round(saved))}</div>` : ""}
         </div>
       `;
     }
@@ -696,7 +696,7 @@ export class Sidebar {
       const leg = legsToShow[legIdx];
 
       if (legsToShow.length > 1) {
-        html += `<div class="leg-divider">Leg ${legIdx + 1} &middot; ${leg.distance_km.toFixed(1)} km</div>`;
+        html += `<div class="leg-divider">${strings.route.legDivider(legIdx + 1, leg.distance_km.toFixed(1))}</div>`;
       }
 
       for (const m of leg.maneuvers) {
@@ -729,7 +729,7 @@ export class Sidebar {
     const streams = this.state.historyStreams;
 
     if (streams.length === 0) {
-      this.historyListEl.innerHTML = `<div class="empty-state">No past streams recorded yet.</div>`;
+      this.historyListEl.innerHTML = `<div class="empty-state">${strings.history.empty}</div>`;
       return;
     }
 
@@ -751,7 +751,7 @@ export class Sidebar {
             <span class="history-platform">${entry.platform}</span>
           </div>
           ${entry.stream_title ? `<div class="history-title">${escapeHtml(entry.stream_title)}</div>` : ""}
-          <div class="history-meta">${pointCount} points &middot; ${durationMin} min</div>
+          <div class="history-meta">${strings.history.meta(pointCount, durationMin)}</div>
         </div>
       `;
     }).join("");
