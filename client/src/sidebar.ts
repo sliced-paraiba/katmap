@@ -252,15 +252,26 @@ export class Sidebar {
   private historyListEl: HTMLElement;
   private historyVisible = false;
   private socialLinksEl: HTMLElement;
+  private helpBtn: HTMLButtonElement;
+  private helpCard: HTMLElement;
+  private isTouch: boolean;
+  private enterPinMode: (() => void) | null = null;
+  private exitPinMode: (() => void) | null = null;
+  private isPinMode = false;
 
   constructor(
     container: HTMLElement,
     state: AppState,
-    onSend: (msg: ClientMessage) => void
+    onSend: (msg: ClientMessage) => void,
+    enterPinMode?: (() => void) | null,
+    exitPinMode?: (() => void) | null,
   ) {
     this.container = container;
     this.state = state;
     this.onSend = onSend;
+    this.enterPinMode = enterPinMode ?? null;
+    this.exitPinMode = exitPinMode ?? null;
+    this.isTouch = "ontouchstart" in window || navigator.maxTouchPoints > 0;
 
     // Build DOM
     this.container.innerHTML = `
@@ -276,6 +287,7 @@ export class Sidebar {
         <button class="action-btn undo-btn" id="undo-btn" title="${strings.sidebar.undoTitle}">${strings.sidebar.undo}</button>
         <button class="action-btn delete-all-btn" id="delete-all-btn" title="${strings.sidebar.deleteAllTitle}">${strings.sidebar.deleteAll}</button>
         <button class="action-btn history-btn" id="history-btn" title="${strings.sidebar.historyTitle}">${strings.sidebar.history}</button>
+        <button class="action-btn help-btn" id="help-btn" title="${strings.help.triggerTitle}">${strings.help.triggerLabel}</button>
       </div>
       <div class="history-panel" id="history-panel" style="display:none">
         <div class="history-header">
@@ -300,6 +312,25 @@ export class Sidebar {
       </div>
       <div class="waypoint-list" id="waypoint-list"></div>
       <div class="route-info" id="route-info"></div>
+      <div class="help-card" id="help-card" style="display:none">
+        <div class="help-card-close" id="help-card-close" title="${strings.sidebar.helpDismissTitle}">${strings.sidebar.helpDismiss}</div>
+        <h2>${strings.help.heading}</h2>
+        <p class="help-intro">${strings.help.intro}</p>
+        <h3>${strings.help.addTitle}</h3>
+        <p class="help-add-details">${this.isTouch ? strings.help.addDetailsMobile : strings.help.addDetailsDesktop}</p>
+        <h3>${strings.help.reorderTitle}</h3>
+        <p>${strings.help.reorderDetails}</p>
+        <p class="help-note">${strings.help.autoRoute}</p>
+        <h3>${strings.help.activeTitle}</h3>
+        <p>${strings.help.activeDetails}</p>
+        <h3>${strings.help.liveEtaTitle}</h3>
+        <p>${strings.help.liveEtaDetails}</p>
+        <h3>${strings.help.undoTitle}</h3>
+        <p>${strings.help.undoDetails}</p>
+        <h3>${strings.help.historyTitle}</h3>
+        <p>${strings.help.historyDetails}</p>
+        <p class="help-farewell">${strings.help.farewell}</p>
+      </div>
     `;
 
     this.listEl = this.container.querySelector("#waypoint-list")!;
@@ -314,6 +345,8 @@ export class Sidebar {
     this.historyPanelEl = this.container.querySelector("#history-panel")!;
     this.historyListEl = this.container.querySelector("#history-list")!;
     this.socialLinksEl = this.container.querySelector("#social-links")!;
+    this.helpBtn = this.container.querySelector("#help-btn")!;
+    this.helpCard = this.container.querySelector("#help-card")!;
 
     const historyBtn = this.container.querySelector("#history-btn")!;
     const historyCloseBtn = this.container.querySelector("#history-close-btn")!;
@@ -341,6 +374,36 @@ export class Sidebar {
       this.historyVisible = false;
     });
 
+    // Help button / card
+    this.helpBtn.addEventListener("click", () => {
+      this.toggleHelpCard();
+    });
+
+    this.helpCard.querySelector("#help-card-close")!.addEventListener("click", () => {
+      this.hideHelpCard();
+    });
+
+    // Clicking outside the help card dismisses it
+    document.addEventListener("click", (e: MouseEvent) => {
+      if (
+        this.helpCard.style.display !== "none" &&
+        !this.helpCard.contains(e.target as Node) &&
+        e.target !== this.helpBtn
+      ) {
+        this.hideHelpCard();
+      }
+    });
+
+    // Escape dismisses help card
+    document.addEventListener("keydown", (e: KeyboardEvent) => {
+      if (e.key === "Escape" && this.helpCard.style.display !== "none") {
+        this.hideHelpCard();
+      }
+    });
+
+    // Auto-show help on first visit (versioned so it re-shows after text changes)
+    this.autoShowHelpIfNew();
+
     this.waypointInputBtn.addEventListener("click", () => this.onWaypointInputSubmit());
     this.waypointInputEl.addEventListener("keydown", (e) => {
       if (e.key === "Enter") {
@@ -355,7 +418,14 @@ export class Sidebar {
 
   private async onWaypointInputSubmit() {
     const raw = this.waypointInputEl.value.trim();
-    if (!raw || this.isAddingWaypoint) return;
+
+    // If input is empty and pin mode is available, start pin-dropper mode
+    if (!raw) {
+      this.startPinDrop();
+      return;
+    }
+
+    if (this.isAddingWaypoint) return;
 
     this.isAddingWaypoint = true;
     this.waypointInputBtn.disabled = true;
@@ -488,9 +558,14 @@ export class Sidebar {
 
     // Rebuild waypoint list
     if (waypoints.length === 0) {
+      const hint = this.isPinMode
+        ? strings.sidebar.emptyStatePinMode
+        : this.isTouch
+          ? strings.sidebar.emptyStateMobile
+          : strings.sidebar.emptyStateDesktop;
       this.listEl.innerHTML = `
         <div class="empty-state">
-          ${strings.sidebar.emptyState}
+          ${hint}
         </div>
       `;
       this.sortable?.destroy();
@@ -723,6 +798,64 @@ export class Sidebar {
         ${dist ? `<span class="maneuver-dist">${dist}</span>` : ""}
       </div>
     `;
+  }
+
+  // --- Help card ---
+
+  private static readonly HELP_VERSION = 1;
+  private static readonly HELP_SEEN_KEY = "katmap-help-seen-version";
+
+  private toggleHelpCard() {
+    if (this.helpCard.style.display !== "none") {
+      this.hideHelpCard();
+    } else {
+      this.showHelpCard();
+    }
+  }
+
+  private showHelpCard() {
+    this.helpCard.style.display = "block";
+    this.markHelpSeen();
+  }
+
+  private hideHelpCard() {
+    this.helpCard.style.display = "none";
+    this.markHelpSeen();
+  }
+
+  /** Bump HELP_VERSION to re-show the card for everyone. */
+  private markHelpSeen() {
+    try {
+      localStorage.setItem(Sidebar.HELP_SEEN_KEY, String(Sidebar.HELP_VERSION));
+    } catch { /* ignore */ }
+  }
+
+  private autoShowHelpIfNew() {
+    let storedVersion = 0;
+    try {
+      storedVersion = parseInt(localStorage.getItem(Sidebar.HELP_SEEN_KEY) ?? "", 10) || 0;
+    } catch { /* ignore */ }
+    if (storedVersion < Sidebar.HELP_VERSION) {
+      this.showHelpCard();
+    }
+  }
+
+  // --- Pin dropper ---
+
+  private startPinDrop() {
+    if (this.enterPinMode) {
+      this.isPinMode = true;
+      this.enterPinMode();
+      this.render();
+    }
+  }
+
+  stopPinDrop() {
+    if (this.exitPinMode) {
+      this.isPinMode = false;
+      this.exitPinMode();
+      this.render();
+    }
   }
 
   private renderHistoryList() {

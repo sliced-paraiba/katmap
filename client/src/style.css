@@ -415,6 +415,82 @@ html, body {
   line-height: 1.5;
 }
 
+/* --- Help / onboarding card --- */
+
+.help-card {
+  position: relative;
+  margin: 0 0 16px 0;
+  padding: 16px 16px 12px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--text-secondary);
+  max-height: 380px;
+  overflow-y: auto;
+}
+
+.help-card h2 {
+  margin: 0 0 4px 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.help-card h3 {
+  margin: 14px 0 4px 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.help-card p {
+  margin: 4px 0;
+}
+
+.help-card em {
+  font-style: normal;
+  font-weight: 500;
+}
+
+.help-intro {
+  color: var(--text-muted);
+}
+
+.help-note {
+  color: var(--accent);
+  font-weight: 500;
+}
+
+.help-farewell {
+  margin-top: 12px !important;
+  font-style: italic;
+  color: var(--text-muted);
+}
+
+.help-card-close {
+  position: absolute;
+  top: 8px;
+  right: 10px;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  cursor: pointer;
+  color: var(--text-muted);
+  font-size: 16px;
+  line-height: 1;
+  user-select: none;
+}
+
+.help-card-close:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
 /* MapLibre overrides for dark theme */
 .maplibregl-ctrl-group {
   background: var(--bg-surface) !important;

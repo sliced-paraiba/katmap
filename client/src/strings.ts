@@ -25,8 +25,13 @@ export const strings = {
     history: "\uD83D\uDCC1 History",
     historyTitle: "Browse past streams",
     pastStreams: "Past Streams",
-    emptyState:
-      "Click on the map or use the input above to add waypoints.<br>Drag waypoints to reorder. Route calculates automatically.",
+    emptyStateDesktop:
+      "Right-click the map or use the input above to add waypoints.<br>Drag waypoints to reorder. Route calculates automatically.",
+    emptyStateMobile:
+      "Long-press the map or use the input above to add waypoints.<br>Drag waypoints to reorder. Route calculates automatically.",
+    emptyStatePinMode: "Click the map to place a waypoint\u2026",
+    helpDismiss: "\u2715",
+    helpDismissTitle: "Dismiss (click outside or press Esc likewise)",
     inputPlaceholder: "lat, lon \u00A0\u2022\u00A0 Plus code \u00A0\u2022\u00A0 Maps link",
     inputTitle: "Add waypoint by coordinates, Plus Code, or Google Maps URL",
     inputButton: "+",
@@ -154,5 +159,35 @@ export const strings = {
   toast: {
     disconnected: "Disconnected from server. Reconnecting...",
     connected: "Connected",
+  },
+
+  /** First-time help / onboarding card */
+  help: {
+    triggerLabel: "\u2753 Help",
+    triggerTitle: "Show help card",
+    heading: "Welcome to KatMap!",
+    intro: "A live collaborative route planner for streamers and their community.",
+    addTitle: "Adding Waypoints",
+    addDetailsDesktop:
+      "Right-click the map and choose <em>Add waypoint here</em>, or paste coordinates / Plus Codes / Google Maps links into the input box above.",
+    addDetailsMobile:
+      "Long-press the map and choose <em>Add waypoint here</em>, or paste coordinates / Plus Codes / Google Maps links into the input box above.",
+    reorderTitle: "Reordering",
+    reorderDetails:
+      "Drag items in the sidebar up or down, or right-click a waypoint on the map and choose <em>Set as start</em> / <em>Set as end</em>.",
+    autoRoute: "The route recalculates automatically when anything changes.",
+    activeTitle: "Active &amp; Inactive",
+    activeDetails:
+      "Waypoints can be made <em>inactive</em> for planning without affecting the route. Right-click a waypoint or use the sidebar toggle to activate / deactivate.",
+    liveEtaTitle: "Live ETA",
+    liveEtaDetails:
+      "When the streamer is live, a <em>Live ETA</em> section appears below the route summary. It estimates remaining distance and time using the streamer\u2019s current speed.",
+    undoTitle: "Undo",
+    undoDetails:
+      "Made a mistake? Press Ctrl+Z or click the <em>Undo</em> button. Also works after auto-deactivating reached waypoints.",
+    historyTitle: "History",
+    historyDetails:
+      "Click <em>History</em> to browse past sessions. Each entry shows where the streamer went with a breadcrumb trail.",
+    farewell: "Have fun \u2014 and walk safe! \u{1F44B}",
   },
 } as const;

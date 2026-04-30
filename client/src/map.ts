@@ -79,6 +79,8 @@ export class MapView {
   private onFollowChange: (following: boolean) => void;
   private longPressTimer: ReturnType<typeof setTimeout> | null = null;
   private longPressFired = false;
+  private pinModeActive = false;
+  private pinDropCallback: ((lat: number, lon: number) => void) | null = null;
 
   constructor(
     container: string | HTMLElement,
@@ -159,10 +161,17 @@ export class MapView {
       this.cancelLongPress();
     }, { passive: true });
 
-    // Dismiss context menu on left-click / tap (but not if long-press just fired)
-    this.map.on("click", () => {
+    // Dismiss context menu on left-click / tap, or handle pin drop
+    this.map.on("click", (e) => {
       if (this.longPressFired) {
         this.longPressFired = false;
+        return;
+      }
+      // Pin dropper mode: drop a waypoint at click position
+      if (this.pinModeActive && this.pinDropCallback) {
+        const { lat, lng } = e.lngLat;
+        this.pinDropCallback(lat, lng);
+        this.exitPinMode();
         return;
       }
       this.hideContextMenu();
@@ -403,6 +412,18 @@ export class MapView {
 
   getFollow(): boolean {
     return this.followStreamer;
+  }
+
+  enterPinMode(onDrop: (lat: number, lon: number) => void) {
+    this.pinModeActive = true;
+    this.pinDropCallback = onDrop;
+    this.map.getCanvas().style.cursor = "crosshair";
+  }
+
+  exitPinMode() {
+    this.pinModeActive = false;
+    this.pinDropCallback = null;
+    this.map.getCanvas().style.cursor = "";
   }
 
   // --- Context menu ---

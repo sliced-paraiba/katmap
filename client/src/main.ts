@@ -1,6 +1,6 @@
 import { Connection } from "./net";
 import { AppState } from "./state";
-import { MapView, Theme } from "./map";
+import { MapView, Theme, reverseGeocode } from "./map";
 import { Sidebar } from "./sidebar";
 import { strings } from "./strings";
 
@@ -66,7 +66,16 @@ const mapView = new MapView(
     followToggle.classList.toggle("active", following);
   }
 );
-const sidebar = new Sidebar(document.getElementById("sidebar")!, state, send);
+const sidebar = new Sidebar(
+  document.getElementById("sidebar")!,
+  state,
+  send,
+  () => mapView.enterPinMode(async (lat, lon) => {
+    const label = (await reverseGeocode(lat, lon)) ?? `Stop ${state.waypoints.length + 1}`;
+    send({ type: "add_waypoint", lat, lon, label });
+  }),
+  () => mapView.exitPinMode()
+);
 
 themeSelect.addEventListener("change", () => {
   mapView.setTheme(themeSelect.value as Theme);
@@ -102,7 +111,11 @@ sidebarToggle.addEventListener("click", () => {
 sidebarOverlay.addEventListener("click", closeSidebar);
 
 document.addEventListener("keydown", (e) => {
-  if (e.key === "Escape") closeSidebar();
+  if (e.key === "Escape") {
+    mapView.exitPinMode();
+    sidebar.stopPinDrop();
+    closeSidebar();
+  }
   if ((e.ctrlKey || e.metaKey) && e.key === "z" && !e.shiftKey) {
     e.preventDefault();
     send({ type: "undo" });
