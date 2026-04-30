@@ -113,6 +113,22 @@ html, body {
   background: var(--bg-hover);
 }
 
+.waypoint-item.waypoint-inactive {
+  opacity: 0.58;
+  background: color-mix(in srgb, var(--bg) 75%, #64748b 25%);
+}
+
+.waypoint-item.waypoint-inactive .waypoint-index {
+  background: rgba(100, 116, 139, 0.18);
+  border-color: rgba(148, 163, 184, 0.45);
+  color: #94a3b8;
+}
+
+.waypoint-marker.inactive {
+  opacity: 0.55;
+  filter: grayscale(0.8);
+}
+
 .waypoint-item.sortable-ghost {
   opacity: 0.4;
 }

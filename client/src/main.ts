@@ -104,14 +104,14 @@ document.addEventListener("keydown", (e) => {
 let lastWaypointJson = "";
 
 state.subscribe(() => {
-  const wpJson = JSON.stringify(state.waypoints.map((w) => [w.id, w.lat, w.lon]));
+  const wpJson = JSON.stringify(state.waypoints.map((w) => [w.id, w.lat, w.lon, w.active !== false]));
   if (wpJson === lastWaypointJson) return;
   lastWaypointJson = wpJson;
 
   // Clear stale routes immediately
   state.clearRoute();
 
-  if (state.waypoints.length >= 2) {
+  if (state.waypoints.filter((w) => w.active !== false).length >= 2) {
     send({ type: "request_route" });
   }
 });
@@ -121,7 +121,7 @@ const LIVE_ROUTE_INTERVAL = 30_000;
 let lastLiveRouteAt = 0;
 
 state.subscribe(() => {
-  if (!state.location || !state.live || state.waypoints.length === 0) return;
+  if (!state.location || !state.live || state.waypoints.some((w) => w.active !== false) === false) return;
 
   const now = Date.now();
   if (now - lastLiveRouteAt < LIVE_ROUTE_INTERVAL) return;

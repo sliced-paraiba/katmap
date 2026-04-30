@@ -27,6 +27,7 @@ mod tests {
             lat,
             lon,
             label: label.to_string(),
+            active: true,
         }
     }
 

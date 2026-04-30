@@ -7,6 +7,12 @@ pub struct Waypoint {
     pub lat: f64,
     pub lon: f64,
     pub label: String,
+    #[serde(default = "default_waypoint_active")]
+    pub active: bool,
+}
+
+fn default_waypoint_active() -> bool {
+    true
 }
 
 /// A single breadcrumb point with optional GeolocationCoordinates telemetry.
@@ -74,6 +80,10 @@ pub enum ClientMessage {
     RenameWaypoint {
         id: Uuid,
         label: String,
+    },
+    SetWaypointActive {
+        id: Uuid,
+        active: bool,
     },
     ReorderWaypoints {
         ordered_ids: Vec<Uuid>,

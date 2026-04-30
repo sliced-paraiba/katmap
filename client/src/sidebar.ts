@@ -503,14 +503,15 @@ export class Sidebar {
             const isLast = i === waypoints.length - 1;
             const multipleWaypoints = waypoints.length > 1;
             return `
-        <div class="waypoint-item" data-id="${wp.id}">
+        <div class="waypoint-item ${wp.active === false ? "waypoint-inactive" : ""}" data-id="${wp.id}">
           <span class="waypoint-index">${i + 1}</span>
           <div class="waypoint-info">
             <div class="waypoint-label" data-id="${wp.id}" title="Click to rename">${escapeHtml(wp.label)}</div>
-            <div class="waypoint-coords">${wp.lat.toFixed(4)}, ${wp.lon.toFixed(4)}</div>
+            <div class="waypoint-coords">${wp.lat.toFixed(4)}, ${wp.lon.toFixed(4)}${wp.active === false ? " · inactive" : ""}</div>
             <div class="waypoint-actions-row">
               ${multipleWaypoints && !isFirst ? `<button class="wp-action-btn wp-set-start" data-id="${wp.id}" title="Set as start">&#x25B2; Start</button>` : ""}
               ${multipleWaypoints && !isLast ? `<button class="wp-action-btn wp-set-end" data-id="${wp.id}" title="Set as end">&#x25BC; End</button>` : ""}
+              <button class="wp-action-btn wp-toggle-active" data-id="${wp.id}" data-active="${wp.active !== false}" title="${wp.active === false ? "Include in route" : "Exclude from route"}">${wp.active === false ? "Activate" : "Deactivate"}</button>
               <button class="wp-action-btn wp-open-gmaps" data-lat="${wp.lat}" data-lon="${wp.lon}" title="Open in Google Maps">&#x1F5FA; Maps</button>
             </div>
           </div>
@@ -548,6 +549,17 @@ export class Sidebar {
           const allIds = this.state.waypoints.map((w) => w.id);
           const ordered = [...allIds.filter((wid) => wid !== id), id];
           this.onSend({ type: "reorder_waypoints", ordered_ids: ordered });
+        });
+      });
+
+      // Active/inactive handlers
+      this.listEl.querySelectorAll(".wp-toggle-active").forEach((btn) => {
+        btn.addEventListener("click", (e) => {
+          e.stopPropagation();
+          const el = btn as HTMLElement;
+          const id = el.dataset.id!;
+          const currentlyActive = el.dataset.active === "true";
+          this.onSend({ type: "set_waypoint_active", id, active: !currentlyActive });
         });
       });
 

@@ -230,6 +230,7 @@ async fn handle_client_message(
                 lat,
                 lon,
                 label,
+                active: true,
             });
             let _ = tx.send(ServerMessage::WaypointList {
                 waypoints: wps.clone(),
@@ -259,6 +260,16 @@ async fn handle_client_message(
             push_undo(undo_stack, &wps).await;
             if let Some(w) = wps.iter_mut().find(|w| w.id == id) {
                 w.label = label;
+            }
+            let _ = tx.send(ServerMessage::WaypointList {
+                waypoints: wps.clone(),
+            });
+        }
+        ClientMessage::SetWaypointActive { id, active } => {
+            let mut wps = waypoints.write().await;
+            push_undo(undo_stack, &wps).await;
+            if let Some(w) = wps.iter_mut().find(|w| w.id == id) {
+                w.active = active;
             }
             let _ = tx.send(ServerMessage::WaypointList {
                 waypoints: wps.clone(),
@@ -308,11 +319,20 @@ async fn handle_client_message(
             }
         }
         ClientMessage::RequestRoute => {
-            let wps = waypoints.read().await.clone();
+            let wps: Vec<_> = waypoints
+                .read()
+                .await
+                .iter()
+                .filter(|w| w.active)
+                .cloned()
+                .collect();
+            if wps.len() < 2 {
+                return Ok(());
+            }
             let tx = tx.clone();
             let url = valhalla_url.to_string();
             tokio::spawn(async move {
-                tracing::info!("Calculating route with {} waypoints", wps.len());
+                tracing::info!("Calculating route with {} active waypoints", wps.len());
                 match crate::valhalla::calculate_route(&wps, &url, walking_speed_kmh).await {
                     Ok(result) => {
                         let _ = tx.send(ServerMessage::RouteResult {
@@ -340,7 +360,13 @@ async fn handle_client_message(
             let speed_kmh = loc.speed.map(|s| s * 3.6).unwrap_or(walking_speed_kmh);
             drop(loc);
 
-            let wps = waypoints.read().await.clone();
+            let wps: Vec<_> = waypoints
+                .read()
+                .await
+                .iter()
+                .filter(|w| w.active)
+                .cloned()
+                .collect();
             if wps.is_empty() {
                 return Ok(());
             }
@@ -358,6 +384,7 @@ async fn handle_client_message(
                 lat: origin_lat,
                 lon: origin_lon,
                 label: "Live position".into(),
+                active: true,
             }];
             live_wps.extend(remaining_wps);
 

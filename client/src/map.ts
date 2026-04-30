@@ -436,6 +436,7 @@ export class MapView {
 
     if (target.waypoint) {
       const wp = target.waypoint;
+      const isActive = wp.active !== false;
       const allIds = this.state.waypoints.map((w) => w.id);
       const isFirst = allIds[0] === wp.id;
       const isLast = allIds[allIds.length - 1] === wp.id;
@@ -453,6 +454,9 @@ export class MapView {
         });
       }
       this.addMenuSeparator(menu);
+      this.addMenuItem(menu, isActive ? "Mark inactive" : "Mark active", () => {
+        this.onSend({ type: "set_waypoint_active", id: wp.id, active: !isActive });
+      });
       this.addMenuItem(menu, "Open in Google Maps", () => {
         window.open(`https://www.google.com/maps?q=${wp.lat},${wp.lon}`, "_blank");
       });
@@ -540,6 +544,7 @@ export class MapView {
       if (existing) {
         existing.setLngLat([wp.lon, wp.lat]);
         const el = existing.getElement();
+        el.classList.toggle("inactive", wp.active === false);
         const label = el.querySelector(".marker-label");
         if (label) label.textContent = String(index + 1);
       } else {
@@ -550,7 +555,7 @@ export class MapView {
 
   private createWaypointMarker(wp: Waypoint, index: number) {
     const el = document.createElement("div");
-    el.className = "waypoint-marker";
+    el.className = "waypoint-marker" + (wp.active === false ? " inactive" : "");
     el.innerHTML = `<span class="marker-label">${index + 1}</span>`;
     el.style.cssText = `
       width: 28px; height: 28px; border-radius: 50%;

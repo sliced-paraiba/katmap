@@ -5,6 +5,7 @@ export interface Waypoint {
   lat: number;
   lon: number;
   label: string;
+  active?: boolean;
 }
 
 export interface LocationUpdate {
@@ -47,6 +48,7 @@ export type ClientMessage =
   | { type: "remove_waypoint"; id: string }
   | { type: "move_waypoint"; id: string; lat: number; lon: number }
   | { type: "rename_waypoint"; id: string; label: string }
+  | { type: "set_waypoint_active"; id: string; active: boolean }
   | { type: "reorder_waypoints"; ordered_ids: string[] }
   | { type: "request_route" }
   | { type: "request_live_route" }
@@ -78,6 +80,7 @@ export type ServerMessage =
   | { type: "live_status"; live: boolean };
 
 export interface BreadcrumbPoint {
+  timestamp_ms: number;
   lon: number;
   lat: number;
   altitude?: number | null;
