@@ -9,6 +9,17 @@
     <aside>
       <header>
         <input id="token" type="password" placeholder="Admin token" autocomplete="current-password" />
+        <select id="theme-select" class="theme-select">
+          <option value="dark">Dark Matter</option>
+          <option value="light">Positron</option>
+          <option value="bright">OSM Bright</option>
+          <option value="fiord">Fiord Color</option>
+          <option value="toner">Toner</option>
+          <option value="basic">Basic</option>
+          <option value="neon">Neon Night</option>
+          <option value="midnight">Midnight Blue</option>
+          <option value="raster">Raster (OSM)</option>
+        </select>
         <label><input id="show-hidden" type="checkbox" /> Show hidden entries</label>
         <button id="load" class="primary">Load history</button>
         <div class="hint">Auth uses <code>ADMIN_API_KEY</code>, falling back to companion API key.</div>

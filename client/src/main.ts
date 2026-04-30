@@ -1,6 +1,7 @@
 import { Connection } from "./net";
 import { AppState } from "./state";
-import { MapView, Theme, reverseGeocode } from "./map";
+import { MapView, reverseGeocode } from "./map";
+import { Theme } from "./themes";
 import { Sidebar } from "./sidebar";
 import { strings } from "./strings";
 

@@ -3,6 +3,7 @@ import "maplibre-gl/dist/maplibre-gl.css";
 import { ServerMessage } from "./types";
 import { decodePolyline } from "./polyline";
 import { strings } from "./strings";
+import { Theme, RASTER_STYLE, applyTheme, registerPmtiles } from "./themes";
 
 // URL params for OBS configurability
 const params = new URLSearchParams(window.location.search);
@@ -12,6 +13,7 @@ const showRoute = params.get("route") !== "0";
 const showTrail = params.get("trail") !== "0";
 const showTelemetry = params.get("telemetry") !== "0";
 const staleAfterMs = Number.parseInt(params.get("staleMs") ?? "30000", 10);
+const themeParam = (params.get("theme") ?? "dark") as Theme;
 
 // ── WebSocket ──────────────────────────────────────────────────────────
 
@@ -46,37 +48,16 @@ function connect() {
 
 // ── Map ────────────────────────────────────────────────────────────────
 
+registerPmtiles();
+
 const map = new maplibregl.Map({
   container: "map",
-  style: {
-    version: 8,
-    sources: {
-      osm: {
-        type: "raster",
-        tiles: ["https://tile.openstreetmap.org/{z}/{x}/{y}.png"],
-        tileSize: 256,
-      },
-    },
-    layers: [{
-      id: "osm",
-      type: "raster",
-      source: "osm",
-      paint: {
-        "raster-opacity": 0.82,
-        "raster-contrast": 0.18,
-        "raster-saturation": -0.35,
-        "raster-brightness-min": 0.08,
-        "raster-brightness-max": 0.92,
-      },
-    }],
-  },
+  style: RASTER_STYLE,
   center: [0, 0],
   zoom,
   interactive: false,
   attributionControl: false,
 });
-
-// Always use raster tiles — lightweight and fast for a small overlay
 
 // ── Custom layers (re-added on style.load) ────────────────────────────
 
@@ -421,5 +402,13 @@ function warmEndpointFeatureCollection(coords: [number, number][]) {
 }
 
 // ── Start ──────────────────────────────────────────────────────────────
+
+// Apply theme from query param, then connect
+map.once("load", () => {
+  applyTheme(map, themeParam, () => {
+    addCustomLayers();
+    reapplyData();
+  });
+});
 
 connect();

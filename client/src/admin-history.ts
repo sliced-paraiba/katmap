@@ -1,6 +1,7 @@
 import maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import "./admin-history.css";
+import { Theme, RASTER_STYLE, applyTheme, registerPmtiles } from "./themes";
 
 type LonLat = [number, number];
 
@@ -47,46 +48,78 @@ let current: AdminHistoryEntry | null = null;
 let selectedIndex: number | null = null;
 let markers: maplibregl.Marker[] = [];
 
+registerPmtiles();
+
 const map = new maplibregl.Map({
   container: "map",
-  style: {
-    version: 8,
-    sources: {
-      osm: {
-        type: "raster",
-        tiles: ["https://tile.openstreetmap.org/{z}/{x}/{y}.png"],
-        tileSize: 256,
-        attribution: "© OpenStreetMap contributors",
-      },
-    },
-    layers: [{ id: "osm", type: "raster", source: "osm" }],
-  },
+  style: RASTER_STYLE,
   center: [-122.3321, 47.6062],
   zoom: 12,
+  dragRotate: false,
 });
 
 map.addControl(new maplibregl.NavigationControl());
-map.on("load", () => {
-  map.addSource("trail", { type: "geojson", lineMetrics: true, data: emptyFc() });
-  map.addLayer({
-    id: "trail-casing",
-    type: "line",
-    source: "trail",
-    layout: { "line-join": "round", "line-cap": "round" },
-    paint: { "line-color": "#111827", "line-width": 7, "line-opacity": 0.45 },
+
+function addCustomLayers() {
+  if (!map.getSource("trail")) {
+    map.addSource("trail", { type: "geojson", lineMetrics: true, data: emptyFc() });
+  }
+  if (!map.getLayer("trail-casing")) {
+    map.addLayer({
+      id: "trail-casing",
+      type: "line",
+      source: "trail",
+      layout: { "line-join": "round", "line-cap": "round" },
+      paint: { "line-color": "#111827", "line-width": 7, "line-opacity": 0.45 },
+    });
+  }
+  if (!map.getLayer("trail-line")) {
+    map.addLayer({
+      id: "trail-line",
+      type: "line",
+      source: "trail",
+      layout: { "line-join": "round", "line-cap": "round" },
+      paint: {
+        "line-gradient": ["interpolate", ["linear"], ["line-progress"], 0, "#60a5fa", 0.3, "#3b82f6", 0.6, "#6366f1", 0.85, "#7c3aed", 1, "#581c87"],
+        "line-width": 4,
+        "line-opacity": 0.9,
+      },
+    });
+  }
+}
+
+map.on("style.load", addCustomLayers);
+
+// Load the stored theme
+const STORAGE_KEY = "katmap-admin-theme";
+const themeSelect = $("theme-select") as HTMLSelectElement;
+
+function loadStoredTheme(): Theme {
+  try {
+    const stored = localStorage.getItem(STORAGE_KEY) as Theme | null;
+    if (stored && ["dark","light","bright","fiord","toner","basic","neon","midnight","raster"].includes(stored)) return stored;
+  } catch { /* ignore */ }
+  return "dark";
+}
+
+const initialTheme = loadStoredTheme();
+themeSelect.value = initialTheme;
+
+themeSelect.addEventListener("change", () => {
+  const theme = themeSelect.value as Theme;
+  try { localStorage.setItem(STORAGE_KEY, theme); } catch { /* ignore */ }
+  applyTheme(map, theme, () => {
+    addCustomLayers();
+    if (current) renderMap({ fit: true });
   });
-  map.addLayer({
-    id: "trail-line",
-    type: "line",
-    source: "trail",
-    layout: { "line-join": "round", "line-cap": "round" },
-    paint: {
-      "line-gradient": ["interpolate", ["linear"], ["line-progress"], 0, "#60a5fa", 0.3, "#3b82f6", 0.6, "#6366f1", 0.85, "#7c3aed", 1, "#581c87"],
-      "line-width": 4,
-      "line-opacity": 0.9,
-    },
+});
+
+// Apply initial theme
+map.once("load", () => {
+  applyTheme(map, initialTheme, () => {
+    addCustomLayers();
+    requestAnimationFrame(() => { map.resize(); if (current) renderMap({ fit: true }); });
   });
-  requestAnimationFrame(() => { map.resize(); renderMap({ fit: true }); });
 });
 window.addEventListener("resize", () => map.resize());
 new ResizeObserver(() => map.resize()).observe($("map"));

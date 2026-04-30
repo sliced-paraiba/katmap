@@ -1,62 +1,12 @@
 import maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
-import { Protocol } from "pmtiles";
 import { AppState } from "./state";
 import { ClientMessage, Waypoint } from "./types";
 import { strings } from "./strings";
+import { Theme, RASTER_STYLE, fetchStyle, registerPmtiles } from "./themes";
 
 // Seattle center as ultimate fallback
 const DEFAULT_CENTER: [number, number] = [-122.3321, 47.6062];
-
-const TILES_BASE = (window.location.origin ?? "") + "/tiles";
-
-// Raster fallback style (used when PMTiles haven't loaded yet or as a fallback)
-const RASTER_STYLE: maplibregl.StyleSpecification = {
-  version: 8,
-  sources: {
-    osm: {
-      type: "raster",
-      tiles: ["https://tile.openstreetmap.org/{z}/{x}/{y}.png"],
-      tileSize: 256,
-      attribution:
-        '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
-    },
-  },
-  layers: [
-    {
-      id: "osm-tiles",
-      type: "raster",
-      source: "osm",
-      minzoom: 0,
-      maxzoom: 19,
-    },
-  ],
-};
-
-export type Theme = "dark" | "light" | "bright" | "fiord" | "toner" | "basic" | "neon" | "midnight" | "raster";
-
-const THEME_FILE: Record<Exclude<Theme, "raster">, string> = {
-  dark:     "dark-matter",
-  light:    "positron",
-  bright:   "osm-bright",
-  fiord:    "fiord-color",
-  toner:    "toner",
-  basic:    "basic",
-  neon:     "neon-night",
-  midnight: "midnight-blue",
-};
-
-// Fetch a vector style JSON from the tile server
-async function fetchStyle(theme: Exclude<Theme, "raster">): Promise<maplibregl.StyleSpecification | null> {
-  const name = THEME_FILE[theme];
-  try {
-    const resp = await fetch(`${TILES_BASE}/${name}.json`);
-    if (!resp.ok) return null;
-    return await resp.json();
-  } catch {
-    return null;
-  }
-}
 
 interface ContextMenuTarget {
   lat: number;
@@ -97,8 +47,7 @@ export class MapView {
     this.onFollowChange = onFollowChange;
 
     // Register PMTiles protocol globally
-    const protocol = new Protocol();
-    maplibregl.addProtocol("pmtiles", protocol.tile);
+    registerPmtiles();
 
     this.map = new maplibregl.Map({
       container,

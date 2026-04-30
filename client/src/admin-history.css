@@ -29,3 +29,5 @@ main { display:grid; grid-template-rows:auto 1fr; min-width:0; min-height:0; }
 .marker.moved-point { box-shadow:0 0 0 3px #f59e0baa, 0 0 7px #000; }
 .marker.selected { width:18px; height:18px; background:#a855f7; }
 .hint { color:#94a3b8; font-size:12px; }
+.theme-select { background:#111827; color:#e5e7eb; border:1px solid #475569; border-radius:6px; padding:5px 8px; font-size:13px; cursor:pointer; }
+.theme-select:hover { background:#1e293b; }
