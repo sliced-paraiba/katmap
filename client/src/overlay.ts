@@ -14,7 +14,7 @@ let reconnectDelay = 1000;
 
 function connect() {
   const protocol = location.protocol === "https:" ? "wss:" : "ws:";
-  ws = new WebSocket(`${protocol}//${location.host}/ws`);
+  ws = new WebSocket(`${protocol}//${location.host}/ws?client=overlay`);
 
   ws.onopen = () => {
     console.log("[overlay] connected");

@@ -3,11 +3,12 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use axum::{
     extract::{
-        State,
+        Query, State,
         ws::{Message, WebSocket, WebSocketUpgrade},
     },
     response::IntoResponse,
 };
+use std::collections::HashMap;
 use futures_util::{SinkExt, StreamExt};
 use tokio::sync::{Mutex, RwLock, broadcast};
 use uuid::Uuid;
@@ -57,13 +58,24 @@ pub struct AppState {
     pub recent_location_pushes: crate::debug::RecentLocationPushes,
 }
 
-pub async fn ws_handler(ws: WebSocketUpgrade, State(state): State<AppState>) -> impl IntoResponse {
-    ws.on_upgrade(|socket| handle_socket(socket, state))
+pub async fn ws_handler(
+    ws: WebSocketUpgrade,
+    State(state): State<AppState>,
+    Query(params): Query<HashMap<String, String>>,
+) -> impl IntoResponse {
+    let counts_as_viewer = params.get("client").is_none_or(|client| client != "overlay");
+    ws.on_upgrade(move |socket| handle_socket(socket, state, counts_as_viewer))
 }
 
-async fn handle_socket(socket: WebSocket, state: AppState) {
-    let count = state.connected_count.fetch_add(1, Ordering::Relaxed) + 1;
-    tracing::info!("WebSocket connection opened ({count} connected)");
+async fn handle_socket(socket: WebSocket, state: AppState, counts_as_viewer: bool) {
+    let count = if counts_as_viewer {
+        state.connected_count.fetch_add(1, Ordering::Relaxed) + 1
+    } else {
+        state.connected_count.load(Ordering::Relaxed)
+    };
+    tracing::info!(
+        "WebSocket connection opened ({count} counted viewers, counts_as_viewer={counts_as_viewer})"
+    );
 
     let (mut sink, mut stream) = socket.split();
 
@@ -73,7 +85,9 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
         let msg = ServerMessage::WaypointList { waypoints };
         if let Ok(json) = serde_json::to_string(&msg) {
             if sink.send(Message::Text(json.into())).await.is_err() {
-                state.connected_count.fetch_sub(1, Ordering::Relaxed);
+                if counts_as_viewer {
+                    state.connected_count.fetch_sub(1, Ordering::Relaxed);
+                }
                 return;
             }
         }
@@ -119,8 +133,11 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
     // Subscribe to broadcast channel for server -> client messages
     let mut rx = state.tx.subscribe();
 
-    // Broadcast updated user count to all clients (new client receives it via rx)
-    let _ = state.tx.send(ServerMessage::UserCount { count });
+    // Broadcast updated user count to all clients. Overlay connections receive the
+    // count but do not increment it.
+    if counts_as_viewer {
+        let _ = state.tx.send(ServerMessage::UserCount { count });
+    }
 
     // Task: forward broadcast messages to this client's WebSocket
     let mut send_task = tokio::spawn(async move {
@@ -165,9 +182,16 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
         _ = &mut recv_task => send_task.abort(),
     }
 
-    let count = state.connected_count.fetch_sub(1, Ordering::Relaxed) - 1;
-    tracing::info!("WebSocket connection closed ({count} connected)");
-    let _ = state.tx.send(ServerMessage::UserCount { count });
+    if counts_as_viewer {
+        let count = state.connected_count.fetch_sub(1, Ordering::Relaxed) - 1;
+        tracing::info!("WebSocket connection closed ({count} counted viewers)");
+        let _ = state.tx.send(ServerMessage::UserCount { count });
+    } else {
+        let count = state.connected_count.load(Ordering::Relaxed);
+        tracing::info!(
+            "Overlay WebSocket connection closed ({count} counted viewers unchanged)"
+        );
+    }
 }
 
 async fn handle_client_message(
