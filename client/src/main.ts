@@ -85,6 +85,12 @@ followToggle.addEventListener("click", () => {
   mapView.setFollow(!mapView.getFollow());
 });
 
+// Help button (top-left map control)
+const helpToggle = document.getElementById("help-toggle")!;
+helpToggle.addEventListener("click", () => {
+  sidebar.toggleHelpCard();
+});
+
 // --- Mobile sidebar toggle ---
 const sidebarEl = document.getElementById("sidebar")!;
 const sidebarOverlay = document.getElementById("sidebar-overlay")!;
@@ -205,8 +211,8 @@ function updateFavicon() {
   img.src = `/api/avatar`;
 }
 
-// --- Connected users counter ---
-const userCountEl = document.getElementById("user-count")!;
+// --- Connected users counter (now in sidebar header) ---
+const userCountEl = document.querySelector("#user-count")!;
 
 state.subscribe(() => {
   userCountEl.textContent = String(state.connectedCount);

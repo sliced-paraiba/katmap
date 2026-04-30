@@ -252,7 +252,6 @@ export class Sidebar {
   private historyListEl: HTMLElement;
   private historyVisible = false;
   private socialLinksEl: HTMLElement;
-  private helpBtn: HTMLButtonElement;
   private helpCard: HTMLElement;
   private isTouch: boolean;
   private enterPinMode: (() => void) | null = null;
@@ -276,7 +275,7 @@ export class Sidebar {
     // Build DOM
     this.container.innerHTML = `
       <div class="sidebar-header">
-        <h1>${strings.sidebar.headerTitle} <span class="connection-status disconnected" id="conn-status" title="${strings.sidebar.disconnected}"></span></h1>
+        <h1>${strings.sidebar.headerTitle} <span class="connection-status disconnected" id="conn-status" title="${strings.sidebar.disconnected}"></span> <span id="user-count" class="user-count-inline"></span></h1>
         <div class="streamer-status" id="streamer-status"></div>
         <button class="add-position-btn" id="add-position-btn" style="display:none">
           ${strings.sidebar.addStreamerLocation}
@@ -287,7 +286,7 @@ export class Sidebar {
         <button class="action-btn undo-btn" id="undo-btn" title="${strings.sidebar.undoTitle}">${strings.sidebar.undo}</button>
         <button class="action-btn delete-all-btn" id="delete-all-btn" title="${strings.sidebar.deleteAllTitle}">${strings.sidebar.deleteAll}</button>
         <button class="action-btn history-btn" id="history-btn" title="${strings.sidebar.historyTitle}">${strings.sidebar.history}</button>
-        <button class="action-btn help-btn" id="help-btn" title="${strings.help.triggerTitle}">${strings.help.triggerLabel}</button>
+      </div>
       </div>
       <div class="history-panel" id="history-panel" style="display:none">
         <div class="history-header">
@@ -312,7 +311,15 @@ export class Sidebar {
       </div>
       <div class="waypoint-list" id="waypoint-list"></div>
       <div class="route-info" id="route-info"></div>
-      <div class="help-card" id="help-card" style="display:none">
+    `;
+
+    // Help card is a full-screen overlay on document.body, not inside the sidebar
+    this.helpCard = document.createElement("div");
+    this.helpCard.id = "help-card";
+    this.helpCard.className = "help-overlay";
+    this.helpCard.style.display = "none";
+    this.helpCard.innerHTML = `
+      <div class="help-card">
         <div class="help-card-close" id="help-card-close" title="${strings.sidebar.helpDismissTitle}">${strings.sidebar.helpDismiss}</div>
         <h2>${strings.help.heading}</h2>
         <p class="help-intro">${strings.help.intro}</p>
@@ -332,6 +339,7 @@ export class Sidebar {
         <p class="help-farewell">${strings.help.farewell}</p>
       </div>
     `;
+    document.body.appendChild(this.helpCard);
 
     this.listEl = this.container.querySelector("#waypoint-list")!;
     this.routeInfoEl = this.container.querySelector("#route-info")!;
@@ -345,8 +353,7 @@ export class Sidebar {
     this.historyPanelEl = this.container.querySelector("#history-panel")!;
     this.historyListEl = this.container.querySelector("#history-list")!;
     this.socialLinksEl = this.container.querySelector("#social-links")!;
-    this.helpBtn = this.container.querySelector("#help-btn")!;
-    this.helpCard = this.container.querySelector("#help-card")!;
+    this.helpCard = this.helpCard;  // already built and appended to body
 
     const historyBtn = this.container.querySelector("#history-btn")!;
     const historyCloseBtn = this.container.querySelector("#history-close-btn")!;
@@ -374,22 +381,14 @@ export class Sidebar {
       this.historyVisible = false;
     });
 
-    // Help button / card
-    this.helpBtn.addEventListener("click", () => {
-      this.toggleHelpCard();
-    });
-
+    // Help card dismiss handlers
     this.helpCard.querySelector("#help-card-close")!.addEventListener("click", () => {
       this.hideHelpCard();
     });
 
-    // Clicking outside the help card dismisses it
-    document.addEventListener("click", (e: MouseEvent) => {
-      if (
-        this.helpCard.style.display !== "none" &&
-        !this.helpCard.contains(e.target as Node) &&
-        e.target !== this.helpBtn
-      ) {
+    // Clicking outside the help card dismisses it (the overlay itself)
+    this.helpCard.addEventListener("click", (e: MouseEvent) => {
+      if (e.target === this.helpCard) {
         this.hideHelpCard();
       }
     });
@@ -800,12 +799,12 @@ export class Sidebar {
     `;
   }
 
-  // --- Help card ---
+  // --- Help card --- (public entry points for the help toggle button)
 
   private static readonly HELP_VERSION = 1;
   private static readonly HELP_SEEN_KEY = "katmap-help-seen-version";
 
-  private toggleHelpCard() {
+  toggleHelpCard() {
     if (this.helpCard.style.display !== "none") {
       this.hideHelpCard();
     } else {

@@ -415,78 +415,89 @@ html, body {
   line-height: 1.5;
 }
 
-/* --- Help / onboarding card --- */
+/* --- Help / onboarding overlay --- */
 
-.help-card {
+.help-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.help-overlay .help-card {
   position: relative;
-  margin: 0 0 16px 0;
-  padding: 16px 16px 12px;
+  width: min(440px, 90vw);
+  max-height: 80vh;
+  overflow-y: auto;
+  padding: 20px 20px 14px;
   background: var(--bg-surface);
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: 10px;
   font-size: 13px;
-  line-height: 1.6;
+  line-height: 1.65;
   color: var(--text-secondary);
-  max-height: 380px;
-  overflow-y: auto;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
 }
 
-.help-card h2 {
+.help-overlay .help-card h2 {
   margin: 0 0 4px 0;
-  font-size: 16px;
+  font-size: 18px;
   font-weight: 600;
   color: var(--text-primary);
 }
 
-.help-card h3 {
-  margin: 14px 0 4px 0;
+.help-overlay .help-card h3 {
+  margin: 16px 0 4px 0;
   font-size: 13px;
   font-weight: 600;
   color: var(--text-primary);
 }
 
-.help-card p {
+.help-overlay .help-card p {
   margin: 4px 0;
 }
 
-.help-card em {
+.help-overlay .help-card em {
   font-style: normal;
   font-weight: 500;
 }
 
-.help-intro {
+.help-overlay .help-intro {
   color: var(--text-muted);
 }
 
-.help-note {
+.help-overlay .help-note {
   color: var(--accent);
   font-weight: 500;
 }
 
-.help-farewell {
-  margin-top: 12px !important;
+.help-overlay .help-farewell {
+  margin-top: 14px !important;
   font-style: italic;
   color: var(--text-muted);
 }
 
-.help-card-close {
+.help-overlay .help-card-close {
   position: absolute;
-  top: 8px;
-  right: 10px;
-  width: 24px;
-  height: 24px;
+  top: 10px;
+  right: 12px;
+  width: 28px;
+  height: 28px;
   display: flex;
   align-items: center;
   justify-content: center;
   border-radius: 4px;
   cursor: pointer;
   color: var(--text-muted);
-  font-size: 16px;
+  font-size: 18px;
   line-height: 1;
   user-select: none;
 }
 
-.help-card-close:hover {
+.help-overlay .help-card-close:hover {
   background: var(--bg-hover);
   color: var(--text-primary);
 }
@@ -722,26 +733,17 @@ html, body {
   color: var(--text);
 }
 
-/* Connected users counter (below follow button, top-right) */
-.user-count-badge {
-  position: absolute;
-  top: 150px;
-  right: 10px;
-  z-index: 100;
-  width: 29px;
-  height: 29px;
-  background: var(--bg-surface);
-  color: var(--text-muted);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
+/* Connected users counter (inline in sidebar header next to connection dot) */
+.user-count-inline {
+  margin-left: 6px;
   font-size: 11px;
   font-weight: 600;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.1);
-  pointer-events: none;
-  user-select: none;
+  color: var(--text-muted);
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1px 6px;
+  vertical-align: middle;
 }
 
 /* Follow/track streamer button (top-right, below MapLibre nav controls) */
@@ -801,6 +803,33 @@ html, body {
 }
 
 .sidebar-toggle-btn:hover {
+  background: var(--bg-hover);
+  border-color: var(--accent);
+}
+
+/* Help toggle button (top-right with other map controls) */
+.help-toggle-btn {
+  position: absolute;
+  top: 150px;
+  right: 10px;
+  z-index: 100;
+  width: 29px;
+  height: 29px;
+  background: var(--bg-surface);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+  box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.help-toggle-btn:hover {
   background: var(--bg-hover);
   border-color: var(--accent);
 }
