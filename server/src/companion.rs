@@ -14,7 +14,7 @@ use crate::ws::AppState;
 const STALE_TIMEOUT: Duration = Duration::from_secs(15 * 60);
 const STALE_CHECK_INTERVAL: Duration = Duration::from_secs(60);
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, serde::Serialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum LocationPush {
     Location {
@@ -97,6 +97,8 @@ pub async fn location_handler(
             return (StatusCode::UNAUTHORIZED, "Invalid or missing API key").into_response();
         }
     }
+
+    crate::debug::record_location_push(&state.recent_location_pushes, push.clone()).await;
 
     match push {
         LocationPush::Location {

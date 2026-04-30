@@ -12,6 +12,7 @@ export default defineConfig({
         overlay: resolve(__dirname, "overlay.html"),
         adminHistory: resolve(__dirname, "admin-history.html"),
         snipe: resolve(__dirname, "snipe.html"),
+        debugLocationPushes: resolve(__dirname, "debug-location-pushes.html"),
       },
     },
   },

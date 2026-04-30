@@ -1,4 +1,5 @@
 mod companion;
+mod debug;
 #[cfg(test)]
 mod domain_tests;
 mod history;
@@ -98,6 +99,7 @@ async fn main() {
         trail: Arc::new(Mutex::new(companion::TrailAccumulator::default())),
         live_location: Arc::new(RwLock::new(ws::LiveLocation::default())),
         snipe_route_limiter: Arc::new(snipe::SnipeRouteLimiter::new(snipe_route_limit_per_minute)),
+        recent_location_pushes: debug::empty_recent_location_pushes(),
     };
 
     // Spawn stale session detector
@@ -115,6 +117,12 @@ async fn main() {
         .route("/api/avatar", get(avatar_handler))
         .route("/api/location", post(companion::location_handler))
         .route("/api/location/status", get(companion::status_handler))
+        .route("/api/version", get(debug::version_handler))
+        .route("/api/debug/location-pushes", get(debug::snapshot_handler))
+        .route(
+            "/debug/location-pushes",
+            get(|| async { Redirect::temporary("/debug-location-pushes.html") }),
+        )
         .route("/api/history", get(history::list_history_handler))
         .route(
             "/admin/history",

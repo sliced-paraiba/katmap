@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>KatMap Location Debug</title>
+  </head>
+  <body>
+    <header>
+      <h1>Location Debug</h1>
+      <input id="token" type="password" placeholder="Admin/debug token" autocomplete="current-password" />
+      <button id="refresh">Refresh</button>
+      <label><input id="auto" type="checkbox" checked /> Auto refresh</label>
+      <span id="status">Not loaded</span>
+    </header>
+    <main>
+      <section class="summary">
+        <h2>Server</h2>
+        <dl id="server-summary"></dl>
+      </section>
+      <section class="summary">
+        <h2>Latest push</h2>
+        <dl id="latest-summary"></dl>
+      </section>
+      <section>
+        <h2>Recent location pushes</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>Received</th>
+              <th>Type</th>
+              <th>Timestamp</th>
+              <th>Lat</th>
+              <th>Lon</th>
+              <th>Accuracy</th>
+              <th>Heading</th>
+              <th>Speed</th>
+              <th>Altitude</th>
+            </tr>
+          </thead>
+          <tbody id="pushes"></tbody>
+        </table>
+      </section>
+      <section>
+        <h2>Raw latest payload</h2>
+        <pre id="raw">{}</pre>
+      </section>
+    </main>
+    <script type="module" src="/src/debug-location-pushes.ts"></script>
+  </body>
+</html>

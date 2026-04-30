@@ -54,6 +54,7 @@ pub struct AppState {
     pub trail: Arc<Mutex<TrailAccumulator>>,
     pub live_location: Arc<RwLock<LiveLocation>>,
     pub snipe_route_limiter: Arc<crate::snipe::SnipeRouteLimiter>,
+    pub recent_location_pushes: crate::debug::RecentLocationPushes,
 }
 
 pub async fn ws_handler(ws: WebSocketUpgrade, State(state): State<AppState>) -> impl IntoResponse {
