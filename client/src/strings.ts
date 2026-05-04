@@ -101,6 +101,30 @@ export const strings = {
       `${points} points \u00B7 ${min} min`,
   },
 
+  /** POI popup */
+  poi: {
+    loading: "Loading POI…",
+    none: "No POI details found nearby",
+    hours: "Hours",
+    phone: "Phone",
+    website: "Website",
+    cuisine: "Cuisine",
+    address: "Address",
+    wheelchair: "Wheelchair",
+    wifi: "Internet",
+    outdoorSeating: "Outdoor seating",
+    delivery: "Delivery",
+    takeaway: "Takeaway",
+    toilets: "Toilets",
+    vegan: "Vegan",
+    vegetarian: "Vegetarian",
+    googleMaps: "Google Maps",
+    addToRoute: "Add to route",
+    yes: "yes",
+    no: "no",
+    unknown: "unknown",
+  },
+
   /** Social links */
   social: {
     discord: "Discord",

@@ -4,6 +4,7 @@ mod debug;
 #[cfg(test)]
 mod domain_tests;
 mod history;
+mod poi;
 mod resolve;
 mod snipe;
 mod types;
@@ -166,6 +167,7 @@ async fn main() {
         trail: Arc::new(Mutex::new(initial_trail)),
         live_location: Arc::new(RwLock::new(ws::LiveLocation::default())),
         snipe_route_limiter: Arc::new(snipe::SnipeRouteLimiter::new(snipe_route_limit_per_minute)),
+        poi_cache: Arc::new(poi::new_cache()),
         recent_location_pushes: debug::empty_recent_location_pushes(),
         auto_complete: ws::AutoCompleteConfig {
             enabled: auto_complete_waypoints,
@@ -198,6 +200,7 @@ async fn main() {
             get(|| async { Redirect::temporary("/debug-location-pushes.html") }),
         )
         .route("/api/history", get(history::list_history_handler))
+        .route("/api/poi", get(poi::poi_handler))
         .route(
             "/admin/history",
             get(|| async { Redirect::temporary("/admin-history.html") }),

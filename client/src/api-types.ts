@@ -115,6 +115,33 @@ export interface HealthResponse {
   age_ms?: number | null;
 }
 
+export interface PoiResult {
+  name?: string | null;
+  category: string;
+  lat: number;
+  lon: number;
+  distance_m: number;
+  google_maps_url: string;
+  address?: string | null;
+  opening_hours?: string | null;
+  phone?: string | null;
+  website?: string | null;
+  cuisine?: string | null;
+  wheelchair?: string | null;
+  internet_access?: string | null;
+  outdoor_seating?: string | null;
+  delivery?: string | null;
+  takeaway?: string | null;
+  toilets?: string | null;
+  vegan?: string | null;
+  vegetarian?: string | null;
+  tags: Record<string, string>;
+}
+
+export interface PoiResponse {
+  pois: PoiResult[];
+}
+
 export interface RouteResponse {
   polyline: string;
   distance_km: number;

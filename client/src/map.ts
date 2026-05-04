@@ -2,10 +2,12 @@ import maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import { AppState } from "./state";
 import { ClientMessage, Waypoint } from "./types";
+import type { PoiResponse, PoiResult } from "./api-types";
 import { strings } from "./strings";
 import { Theme, RASTER_STYLE, fetchStyle, registerPmtiles } from "./themes";
 import { decodePolyline } from "./polyline";
 import { coldEndpointFeatureCollection, coldGradientExpression, warmEndpointFeatureCollection, warmGradientExpression } from "./gradients";
+import { escapeHtml } from "./html";
 
 // Seattle center as ultimate fallback
 const DEFAULT_CENTER: [number, number] = [-122.3321, 47.6062];
@@ -24,6 +26,8 @@ export class MapView {
   private state: AppState;
   private hasCenteredOnStreamer = false;
   private contextMenu: HTMLElement;
+  private poiPopup: HTMLElement;
+  private poiLookupSeq = 0;
   private currentTheme: Theme = "dark";
   private onThemeChange: (theme: Theme) => void;
   private initialTheme: Theme;
@@ -63,7 +67,9 @@ export class MapView {
 
     // Build context menu element
     this.contextMenu = this.buildContextMenu();
+    this.poiPopup = this.buildPoiPopup();
     document.body.appendChild(this.contextMenu);
+    document.body.appendChild(this.poiPopup);
 
     // Right-click on map → show context menu
     this.map.on("contextmenu", (e) => {
@@ -118,6 +124,7 @@ export class MapView {
         this.longPressFired = false;
         return;
       }
+      e.originalEvent.stopPropagation();
       // Pin dropper mode: drop a waypoint at click position
       if (this.pinModeActive && this.pinDropCallback) {
         const { lat, lng } = e.lngLat;
@@ -126,10 +133,17 @@ export class MapView {
         return;
       }
       this.hideContextMenu();
+      void this.handlePoiClick(e);
     });
-    document.addEventListener("click", () => this.hideContextMenu());
+    document.addEventListener("click", () => {
+      this.hideContextMenu();
+      this.hidePoiPopup();
+    });
     document.addEventListener("keydown", (e) => {
-      if (e.key === "Escape") this.hideContextMenu();
+      if (e.key === "Escape") {
+        this.hideContextMenu();
+        this.hidePoiPopup();
+      }
     });
 
     // Add custom layers once the initial style is fully loaded
@@ -375,6 +389,127 @@ export class MapView {
     this.pinModeActive = false;
     this.pinDropCallback = null;
     this.map.getCanvas().style.cursor = "";
+  }
+
+  // --- POI popup ---
+
+  private buildPoiPopup(): HTMLElement {
+    const el = document.createElement("div");
+    el.className = "poi-popup";
+    el.style.display = "none";
+    el.addEventListener("click", (e) => e.stopPropagation());
+    return el;
+  }
+
+  private async handlePoiClick(e: maplibregl.MapMouseEvent) {
+    const hit = this.poiHitAt(e.point);
+    if (!hit) {
+      this.hidePoiPopup();
+      return;
+    }
+
+    const seq = ++this.poiLookupSeq;
+    this.showPoiPopup(e.originalEvent.clientX, e.originalEvent.clientY, `<div class="poi-loading">${strings.poi.loading}</div>`);
+
+    const params = new URLSearchParams({
+      lat: String(e.lngLat.lat),
+      lon: String(e.lngLat.lng),
+    });
+    if (hit.name) params.set("name", hit.name);
+
+    try {
+      const res = await fetch(`/api/poi?${params.toString()}`);
+      if (!res.ok) throw new Error(await res.text() || res.statusText);
+      const data = await res.json() as PoiResponse;
+      if (seq !== this.poiLookupSeq) return;
+      const poi = data.pois[0];
+      if (!poi) {
+        this.showPoiPopup(e.originalEvent.clientX, e.originalEvent.clientY, `<div class="poi-empty">${strings.poi.none}</div>`);
+        return;
+      }
+      this.showPoiPopup(e.originalEvent.clientX, e.originalEvent.clientY, this.renderPoi(poi));
+      this.wirePoiActions(poi);
+    } catch (err) {
+      if (seq !== this.poiLookupSeq) return;
+      const msg = err instanceof Error ? err.message : String(err);
+      this.showPoiPopup(e.originalEvent.clientX, e.originalEvent.clientY, `<div class="poi-empty">${escapeHtml(msg)}</div>`);
+    }
+  }
+
+  private poiHitAt(point: maplibregl.PointLike): { name?: string } | null {
+    const features = this.map.queryRenderedFeatures(point);
+    for (const feature of features) {
+      const layer = feature.layer?.id ?? "";
+      if (!/(poi|place|transit|natural|label|shop|amenity)/i.test(layer)) continue;
+      const props = feature.properties ?? {};
+      const name = String(props.name ?? props.name_en ?? props.name_int ?? "").trim();
+      if (name) return { name };
+    }
+    return null;
+  }
+
+  private renderPoi(poi: PoiResult): string {
+    const title = escapeHtml(poi.name || poi.category);
+    const subtitle = [poi.category, `${Math.round(poi.distance_m)}m away`].filter(Boolean).map(escapeHtml).join(" · ");
+    const fields: [string, string | null | undefined][] = [
+      [strings.poi.address, poi.address],
+      [strings.poi.hours, poi.opening_hours],
+      [strings.poi.phone, poi.phone],
+      [strings.poi.website, poi.website],
+      [strings.poi.cuisine, poi.cuisine],
+      [strings.poi.wheelchair, poi.wheelchair],
+      [strings.poi.wifi, poi.internet_access],
+      [strings.poi.outdoorSeating, poi.outdoor_seating],
+      [strings.poi.delivery, poi.delivery],
+      [strings.poi.takeaway, poi.takeaway],
+      [strings.poi.toilets, poi.toilets],
+      [strings.poi.vegan, poi.vegan],
+      [strings.poi.vegetarian, poi.vegetarian],
+    ];
+    const rows = fields
+      .filter(([, value]) => value != null && value !== "")
+      .slice(0, 8)
+      .map(([label, value]) => `<div class="poi-row"><span>${escapeHtml(label)}</span><strong>${escapeHtml(String(value))}</strong></div>`)
+      .join("");
+
+    return `
+      <button class="poi-close" title="Close">×</button>
+      <div class="poi-title">${title}</div>
+      <div class="poi-subtitle">${subtitle}</div>
+      ${rows ? `<div class="poi-fields">${rows}</div>` : ""}
+      <div class="poi-actions">
+        <button class="poi-add-route">${strings.poi.addToRoute}</button>
+        <a href="${escapeHtml(poi.google_maps_url)}" target="_blank" rel="noopener noreferrer">${strings.poi.googleMaps}</a>
+      </div>
+    `;
+  }
+
+  private wirePoiActions(poi: PoiResult) {
+    this.poiPopup.querySelector(".poi-close")?.addEventListener("click", () => this.hidePoiPopup());
+    this.poiPopup.querySelector(".poi-add-route")?.addEventListener("click", async () => {
+      const label = poi.name || poi.category || strings.map.fallbackStopLabel(this.state.waypoints.length + 1);
+      this.onSend({ type: "add_waypoint", lat: poi.lat, lon: poi.lon, label });
+      this.hidePoiPopup();
+    });
+  }
+
+  private showPoiPopup(x: number, y: number, html: string) {
+    const popup = this.poiPopup;
+    popup.innerHTML = html;
+    popup.style.display = "block";
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    requestAnimationFrame(() => {
+      const pw = popup.offsetWidth;
+      const ph = popup.offsetHeight;
+      popup.style.left = `${Math.min(x + 12, vw - pw - 8)}px`;
+      popup.style.top = `${Math.min(y + 12, vh - ph - 8)}px`;
+    });
+  }
+
+  private hidePoiPopup() {
+    this.poiLookupSeq++;
+    this.poiPopup.style.display = "none";
   }
 
   // --- Context menu ---

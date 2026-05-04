@@ -69,6 +69,7 @@ pub struct AppState {
     pub trail: Arc<Mutex<TrailAccumulator>>,
     pub live_location: Arc<RwLock<LiveLocation>>,
     pub snipe_route_limiter: Arc<crate::snipe::SnipeRouteLimiter>,
+    pub poi_cache: Arc<RwLock<crate::poi::PoiCache>>,
     pub recent_location_pushes: crate::debug::RecentLocationPushes,
     pub auto_complete: AutoCompleteConfig,
     pub auto_complete_candidate: Arc<Mutex<Option<AutoCompleteCandidate>>>,

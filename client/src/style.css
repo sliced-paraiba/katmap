@@ -719,6 +719,90 @@ html, body {
   margin: 4px 0;
 }
 
+.poi-popup {
+  position: fixed;
+  z-index: 10001;
+  width: min(340px, calc(100vw - 24px));
+  max-height: min(520px, calc(100vh - 24px));
+  overflow: auto;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.55);
+  padding: 12px;
+  color: var(--text);
+}
+
+.poi-title {
+  font-weight: 800;
+  font-size: 16px;
+  padding-right: 28px;
+}
+
+.poi-subtitle,
+.poi-empty,
+.poi-loading {
+  color: var(--text-muted);
+  font-size: 13px;
+  margin-top: 4px;
+}
+
+.poi-close {
+  position: absolute;
+  top: 6px;
+  right: 8px;
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 20px;
+  cursor: pointer;
+}
+
+.poi-fields {
+  display: grid;
+  gap: 6px;
+  margin: 10px 0;
+}
+
+.poi-row {
+  display: grid;
+  grid-template-columns: 112px 1fr;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.poi-row span {
+  color: var(--text-muted);
+}
+
+.poi-row strong {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.poi-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+  align-items: center;
+}
+
+.poi-actions button,
+.poi-actions a {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-hover);
+  color: var(--text);
+  padding: 7px 10px;
+  text-decoration: none;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.poi-actions a {
+  color: var(--accent);
+}
+
 /* Theme selector dropdown (floats over map, bottom-left) */
 .theme-select {
   position: absolute;
