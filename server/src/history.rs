@@ -7,13 +7,19 @@ use axum::{
     response::IntoResponse,
 };
 use rusqlite::{Connection, Statement, params};
-use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex;
 use tokio::task;
 
 use crate::ws::AppState;
+
+mod db;
+mod edits;
+pub use edits::TrailEdits;
+pub(crate) use edits::apply_trail_edits;
+use db::run_column_migration;
+use edits::parse_edits;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HistoryEntry {
@@ -30,22 +36,6 @@ pub struct HistoryEntry {
     /// Full telemetry per point (altitude, accuracy, heading, speed, etc.)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub telemetry: Option<Vec<crate::types::BreadcrumbPoint>>,
-}
-
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub struct TrailEdits {
-    /// Original breadcrumb indices hidden from display. Non-destructive: original points stay in DB.
-    #[serde(default)]
-    pub hidden_indices: Vec<usize>,
-    /// Original breadcrumb index -> replacement `[lon, lat]`.
-    #[serde(default)]
-    pub moved_points: BTreeMap<usize, [f64; 2]>,
-    /// Last admin edit timestamp, milliseconds since Unix epoch.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub updated_at: Option<i64>,
-    /// Best-effort editor identity. With shared-token auth this is intentionally coarse.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub updated_by: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -105,45 +95,6 @@ pub fn db_path() -> PathBuf {
     std::env::var("HISTORY_DB_PATH")
         .unwrap_or_else(|_| "/opt/katmap/history.db".to_string())
         .into()
-}
-
-fn has_column(conn: &Connection, table: &str, column: &str) -> rusqlite::Result<bool> {
-    conn.query_row(
-        &format!("SELECT COUNT(*) > 0 FROM pragma_table_info('{table}') WHERE name = ?1"),
-        [column],
-        |row| row.get(0),
-    )
-}
-
-fn has_migration(conn: &Connection, version: i64) -> rusqlite::Result<bool> {
-    conn.query_row(
-        "SELECT COUNT(*) > 0 FROM schema_migrations WHERE version = ?1",
-        [version],
-        |row| row.get(0),
-    )
-}
-
-fn mark_migration(conn: &Connection, version: i64) -> rusqlite::Result<()> {
-    conn.execute(
-        "INSERT OR IGNORE INTO schema_migrations (version, applied_at) VALUES (?1, ?2)",
-        params![version, chrono::Utc::now().timestamp_millis()],
-    )?;
-    Ok(())
-}
-
-fn run_column_migration(
-    conn: &Connection,
-    version: i64,
-    column: &str,
-    sql: &str,
-) -> rusqlite::Result<()> {
-    if !has_migration(conn, version)? {
-        if !has_column(conn, "streams", column)? {
-            conn.execute(sql, [])?;
-        }
-        mark_migration(conn, version)?;
-    }
-    Ok(())
 }
 
 pub async fn init_history(db_path: PathBuf) -> HistoryState {
@@ -403,25 +354,6 @@ pub async fn list_history_internal(state: &HistoryState) -> Vec<HistoryEntry> {
         .expect("failed to query");
 
     rows.filter_map(|r| r.ok()).collect()
-}
-
-fn parse_edits(json: Option<&str>) -> TrailEdits {
-    json.and_then(|j| serde_json::from_str(j).ok())
-        .unwrap_or_default()
-}
-
-pub(crate) fn apply_trail_edits(points: &[[f64; 2]], edits: &TrailEdits) -> Vec<[f64; 2]> {
-    points
-        .iter()
-        .enumerate()
-        .filter_map(|(idx, point)| {
-            if edits.hidden_indices.contains(&idx) {
-                None
-            } else {
-                Some(edits.moved_points.get(&idx).copied().unwrap_or(*point))
-            }
-        })
-        .collect()
 }
 
 fn unauthorized() -> axum::response::Response {
