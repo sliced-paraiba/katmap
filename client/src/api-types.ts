@@ -4,6 +4,8 @@ import type { BreadcrumbPoint, RouteLeg } from "./types";
 export interface TrailEdits {
   hidden_indices: number[];
   moved_points: Record<string, LonLat>;
+  updated_at?: number | null;
+  updated_by?: string | null;
 }
 
 export interface AdminHistoryEntry {

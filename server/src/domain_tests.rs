@@ -121,6 +121,7 @@ mod tests {
         let edits = TrailEdits {
             hidden_indices: vec![1],
             moved_points: BTreeMap::new(),
+            ..TrailEdits::default()
         };
 
         assert_eq!(
@@ -135,6 +136,7 @@ mod tests {
         let edits = TrailEdits {
             hidden_indices: vec![],
             moved_points: BTreeMap::from([(1, [20.0, 20.0])]),
+            ..TrailEdits::default()
         };
 
         assert_eq!(
@@ -149,6 +151,7 @@ mod tests {
         let edits = TrailEdits {
             hidden_indices: vec![1],
             moved_points: BTreeMap::from([(1, [20.0, 20.0])]),
+            ..TrailEdits::default()
         };
 
         assert_eq!(
@@ -163,6 +166,7 @@ mod tests {
         let edits = TrailEdits {
             hidden_indices: vec![99],
             moved_points: BTreeMap::from([(42, [42.0, 42.0])]),
+            ..TrailEdits::default()
         };
 
         assert_eq!(apply_trail_edits(&points, &edits), points);

@@ -40,6 +40,12 @@ pub struct TrailEdits {
     /// Original breadcrumb index -> replacement `[lon, lat]`.
     #[serde(default)]
     pub moved_points: BTreeMap<usize, [f64; 2]>,
+    /// Last admin edit timestamp, milliseconds since Unix epoch.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub updated_at: Option<i64>,
+    /// Best-effort editor identity. With shared-token auth this is intentionally coarse.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub updated_by: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -101,6 +107,45 @@ pub fn db_path() -> PathBuf {
         .into()
 }
 
+fn has_column(conn: &Connection, table: &str, column: &str) -> rusqlite::Result<bool> {
+    conn.query_row(
+        &format!("SELECT COUNT(*) > 0 FROM pragma_table_info('{table}') WHERE name = ?1"),
+        [column],
+        |row| row.get(0),
+    )
+}
+
+fn has_migration(conn: &Connection, version: i64) -> rusqlite::Result<bool> {
+    conn.query_row(
+        "SELECT COUNT(*) > 0 FROM schema_migrations WHERE version = ?1",
+        [version],
+        |row| row.get(0),
+    )
+}
+
+fn mark_migration(conn: &Connection, version: i64) -> rusqlite::Result<()> {
+    conn.execute(
+        "INSERT OR IGNORE INTO schema_migrations (version, applied_at) VALUES (?1, ?2)",
+        params![version, chrono::Utc::now().timestamp_millis()],
+    )?;
+    Ok(())
+}
+
+fn run_column_migration(
+    conn: &Connection,
+    version: i64,
+    column: &str,
+    sql: &str,
+) -> rusqlite::Result<()> {
+    if !has_migration(conn, version)? {
+        if !has_column(conn, "streams", column)? {
+            conn.execute(sql, [])?;
+        }
+        mark_migration(conn, version)?;
+    }
+    Ok(())
+}
+
 pub async fn init_history(db_path: PathBuf) -> HistoryState {
     let conn = task::spawn_blocking(move || {
         if let Some(parent) = db_path.parent() {
@@ -124,71 +169,50 @@ pub async fn init_history(db_path: PathBuf) -> HistoryState {
         )
         .expect("failed to create history table");
 
-        let has_completed: bool = conn
-            .query_row(
-                "SELECT COUNT(*) > 0 FROM pragma_table_info('streams') WHERE name = 'completed'",
-                [],
-                |row| row.get(0),
-            )
-            .unwrap_or(false);
-        if !has_completed {
-            conn.execute(
-                "ALTER TABLE streams ADD COLUMN completed INTEGER NOT NULL DEFAULT 0",
-                [],
-            )
-            .expect("failed to add completed column");
-        }
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS schema_migrations (
+                version INTEGER PRIMARY KEY,
+                applied_at INTEGER NOT NULL
+            )",
+            [],
+        )
+        .expect("failed to create schema_migrations table");
 
-        let has_session_id: bool = conn
-            .query_row(
-                "SELECT COUNT(*) > 0 FROM pragma_table_info('streams') WHERE name = 'session_id'",
-                [],
-                |row| row.get(0),
-            )
-            .unwrap_or(false);
-        if !has_session_id {
-            conn.execute("ALTER TABLE streams ADD COLUMN session_id TEXT", [])
-                .expect("failed to add session_id column");
-        }
-
-        let has_hidden: bool = conn
-            .query_row(
-                "SELECT COUNT(*) > 0 FROM pragma_table_info('streams') WHERE name = 'hidden'",
-                [],
-                |row| row.get(0),
-            )
-            .unwrap_or(false);
-        if !has_hidden {
-            conn.execute(
-                "ALTER TABLE streams ADD COLUMN hidden INTEGER NOT NULL DEFAULT 0",
-                [],
-            )
-            .expect("failed to add hidden column");
-        }
-
-        let has_telemetry: bool = conn
-            .query_row(
-                "SELECT COUNT(*) > 0 FROM pragma_table_info('streams') WHERE name = 'telemetry'",
-                [],
-                |row| row.get(0),
-            )
-            .unwrap_or(false);
-        if !has_telemetry {
-            conn.execute("ALTER TABLE streams ADD COLUMN telemetry TEXT", [])
-                .expect("failed to add telemetry column");
-        }
-
-        let has_trail_edits: bool = conn
-            .query_row(
-                "SELECT COUNT(*) > 0 FROM pragma_table_info('streams') WHERE name = 'trail_edits'",
-                [],
-                |row| row.get(0),
-            )
-            .unwrap_or(false);
-        if !has_trail_edits {
-            conn.execute("ALTER TABLE streams ADD COLUMN trail_edits TEXT", [])
-                .expect("failed to add trail_edits column");
-        }
+        run_column_migration(
+            &conn,
+            1,
+            "completed",
+            "ALTER TABLE streams ADD COLUMN completed INTEGER NOT NULL DEFAULT 0",
+        )
+        .expect("failed to migrate completed column");
+        run_column_migration(
+            &conn,
+            2,
+            "session_id",
+            "ALTER TABLE streams ADD COLUMN session_id TEXT",
+        )
+        .expect("failed to migrate session_id column");
+        run_column_migration(
+            &conn,
+            3,
+            "hidden",
+            "ALTER TABLE streams ADD COLUMN hidden INTEGER NOT NULL DEFAULT 0",
+        )
+        .expect("failed to migrate hidden column");
+        run_column_migration(
+            &conn,
+            4,
+            "telemetry",
+            "ALTER TABLE streams ADD COLUMN telemetry TEXT",
+        )
+        .expect("failed to migrate telemetry column");
+        run_column_migration(
+            &conn,
+            5,
+            "trail_edits",
+            "ALTER TABLE streams ADD COLUMN trail_edits TEXT",
+        )
+        .expect("failed to migrate trail_edits column");
         tracing::info!("History DB initialized at {:?}", db_path);
         conn
     })
@@ -503,6 +527,8 @@ pub async fn admin_update_edits_handler(
     }
     edits.hidden_indices.sort_unstable();
     edits.hidden_indices.dedup();
+    edits.updated_at = Some(chrono::Utc::now().timestamp_millis());
+    edits.updated_by = Some("admin".to_string());
     let json = match serde_json::to_string(&edits) {
         Ok(json) => json,
         Err(e) => return (StatusCode::BAD_REQUEST, e.to_string()).into_response(),
@@ -535,9 +561,9 @@ pub async fn admin_delete_history_handler(
         None => return (StatusCode::NOT_FOUND, "History not configured").into_response(),
     };
     let guard = history.db.lock().await;
-    match guard.execute("DELETE FROM streams WHERE id = ?1", [id]) {
+    match guard.execute("UPDATE streams SET hidden = 1 WHERE id = ?1", [id]) {
         Ok(0) => (StatusCode::NOT_FOUND, "Session not found").into_response(),
-        Ok(_) => (StatusCode::OK, "Deleted").into_response(),
+        Ok(_) => (StatusCode::OK, "Hidden").into_response(),
         Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
     }
 }

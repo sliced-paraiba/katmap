@@ -272,10 +272,13 @@ $("toggle-hide").onclick = async () => {
   renderList();
 };
 $("delete-entry").onclick = async () => {
-  if (!current || !confirm(`Permanently delete entry #${current.id}?`)) return;
+  if (!current || !confirm(`Hide entry #${current.id}? This is a soft delete; the original row remains in the DB and can be shown again with “Show hidden entries”.`)) return;
   await api<string>(`/api/admin/history/${current.id}`, { method: "DELETE" });
-  entries = entries.filter((e) => e.id !== current?.id);
-  current = null;
+  current.hidden = true;
+  if (!(($("show-hidden") as HTMLInputElement).checked)) {
+    entries = entries.filter((e) => e.id !== current?.id);
+    current = null;
+  }
   renderList();
   renderMap();
 };

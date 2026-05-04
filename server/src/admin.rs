@@ -2,6 +2,7 @@ use std::env;
 
 use chrono::DateTime;
 use rusqlite::Connection;
+use serde_json::json;
 
 fn main() {
     let db_path = env::var("HISTORY_DB_PATH")
@@ -37,7 +38,7 @@ fn usage() -> ! {
     eprintln!("  rename <id> <name>  Rename a session");
     eprintln!("  hide <id>         Hide a session from the web UI");
     eprintln!("  unhide <id>       Unhide a session");
-    eprintln!("  delete <id>       Permanently delete a session");
+    eprintln!("  delete <id>       Permanently delete a session after JSON backup + typed confirmation");
     std::process::exit(1);
 }
 
@@ -239,19 +240,51 @@ fn cmd_delete(args: &mut Vec<String>, conn: &Connection) {
     }
     let id: i64 = args.remove(0).parse().unwrap_or_else(|_| die("Invalid id"));
 
-    let name: String = conn
+    let backup = conn
         .query_row(
-            "SELECT COALESCE(session_id, streamer_id) FROM streams WHERE id = ?1",
+            "SELECT id, streamer_id, platform, started_at, ended_at, stream_title, viewer_count, breadcrumbs, completed, session_id, hidden, telemetry, trail_edits
+             FROM streams WHERE id = ?1",
             [id],
-            |row| row.get(0),
+            |row| {
+                let session_id: Option<String> = row.get(9)?;
+                let streamer_id: String = row.get(1)?;
+                Ok(json!({
+                    "id": row.get::<_, i64>(0)?,
+                    "streamer_id": streamer_id,
+                    "platform": row.get::<_, String>(2)?,
+                    "started_at": row.get::<_, i64>(3)?,
+                    "ended_at": row.get::<_, i64>(4)?,
+                    "stream_title": row.get::<_, Option<String>>(5)?,
+                    "viewer_count": row.get::<_, Option<i32>>(6)?,
+                    "breadcrumbs": row.get::<_, String>(7)?,
+                    "completed": row.get::<_, i32>(8)? != 0,
+                    "session_id": session_id,
+                    "hidden": row.get::<_, i32>(10)? != 0,
+                    "telemetry": row.get::<_, Option<String>>(11)?,
+                    "trail_edits": row.get::<_, Option<String>>(12)?,
+                }))
+            },
         )
         .unwrap_or_else(|_| die(&format!("Session {id} not found")));
 
-    eprint!("Delete session {id} \"{name}\"? [y/N] ");
+    let name = backup
+        .get("session_id")
+        .and_then(|v| v.as_str())
+        .or_else(|| backup.get("streamer_id").and_then(|v| v.as_str()))
+        .unwrap_or("unknown");
+    let backup_path = format!(
+        "history-delete-backup-{id}-{}.json",
+        chrono::Utc::now().timestamp_millis()
+    );
+    let pretty = serde_json::to_string_pretty(&backup).unwrap_or_else(|e| die(&e.to_string()));
+    std::fs::write(&backup_path, pretty).unwrap_or_else(|e| die(&format!("Backup failed: {e}")));
+
+    eprintln!("Backup written to {backup_path}");
+    eprint!("Type session id {id} to permanently delete \"{name}\": ");
     let mut input = String::new();
     std::io::stdin().read_line(&mut input).ok();
-    if input.trim().to_lowercase() != "y" {
-        eprintln!("Cancelled.");
+    if input.trim() != id.to_string() {
+        eprintln!("Cancelled. Backup retained at {backup_path}.");
         return;
     }
 
