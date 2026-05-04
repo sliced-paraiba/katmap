@@ -6,6 +6,7 @@ import { strings } from "./strings";
 import { Theme, RASTER_STYLE, applyTheme, registerPmtiles } from "./themes";
 import { warmEndpointFeatureCollection, warmGradientExpression } from "./gradients";
 import { haversineMeters } from "./geo";
+import { formatSpeedMs, formatAltitude } from "./units";
 
 // URL params for OBS configurability
 const params = new URLSearchParams(window.location.search);
@@ -231,9 +232,9 @@ function handleMessage(msg: ServerMessage) {
       const altitude = finiteNumber(msg.altitude);
 
       telSpeed.textContent =
-        speedMps != null ? strings.overlay.speed((speedMps * 3.6).toFixed(1)) : strings.overlay.speedUnknown;
+        speedMps != null ? formatSpeedMs(speedMps, "imperial") : strings.overlay.speedUnknown;
       telAlt.textContent =
-        altitude != null ? strings.overlay.altitude(`${Math.round(altitude)}`) : strings.overlay.altUnknown;
+        altitude != null ? formatAltitude(altitude, "imperial") + " alt" : strings.overlay.altUnknown;
       telCoords.textContent = `${msg.lat.toFixed(4)}, ${msg.lon.toFixed(4)}`;
       break;
     }

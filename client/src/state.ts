@@ -5,6 +5,7 @@ import {
   ServerMessage,
   HistoryEntry,
 } from "./types";
+import { UserUnits, loadStoredUnits, saveStoredUnits } from "./units";
 
 export type StateListener = () => void;
 
@@ -40,6 +41,7 @@ export class AppState {
   lastError: string | null = null;
   errorTimestamp = 0;
   socialLinks: SocialLinks = { discord: null, kick: null, twitch: null };
+  units: UserUnits = loadStoredUnits();
 
   /** Breadcrumb trail of the currently selected historical stream */
   historyTrail: [number, number][] = [];
@@ -101,6 +103,12 @@ export class AppState {
   /** Replace the full breadcrumb track (called on session start and full data put). */
   setBreadcrumbs(coords: [number, number][]) {
     this.breadcrumbCoords = coords;
+    this.notify();
+  }
+
+  setUnits(units: UserUnits) {
+    this.units = units;
+    saveStoredUnits(units);
     this.notify();
   }
 

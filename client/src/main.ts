@@ -1,8 +1,9 @@
 import { Connection } from "./net";
 import { AppState } from "./state";
 import { MapView, reverseGeocode } from "./map";
-import { Theme, THEMES, isTheme } from "./themes";
+import { Theme, isTheme } from "./themes";
 import { Sidebar } from "./sidebar";
+import { SettingsPopup } from "./settings";
 import { strings } from "./strings";
 
 const state = new AppState();
@@ -26,18 +27,7 @@ const conn = new Connection(
 
 const send = (msg: Parameters<Connection["send"]>[0]) => conn.send(msg);
 
-// Theme dropdown (placed over the map)
-const themeSelect = document.getElementById("theme-select") as HTMLSelectElement;
-
 const STORAGE_KEY = "katmap-theme";
-
-// Populate theme options from strings
-for (const key of THEMES) {
-  const opt = document.createElement("option");
-  opt.value = key;
-  opt.textContent = strings.themes[key as keyof typeof strings.themes];
-  themeSelect.appendChild(opt);
-}
 
 function loadStoredTheme(): Theme {
   try {
@@ -48,14 +38,13 @@ function loadStoredTheme(): Theme {
 }
 
 const initialTheme = loadStoredTheme();
-themeSelect.value = initialTheme;
 
 function onThemeChange(theme: Theme) {
-  themeSelect.value = theme;
   // Persist to localStorage (skip "raster" — it's a fallback, not a user choice)
   if (theme !== "raster") {
     try { localStorage.setItem(STORAGE_KEY, theme); } catch { /* ignore */ }
   }
+  settings.refresh();
 }
 
 // --- Follow/track streamer toggle ---
@@ -82,12 +71,20 @@ const sidebar = new Sidebar(
   () => mapView.exitPinMode()
 );
 
-themeSelect.addEventListener("change", () => {
-  mapView.setTheme(themeSelect.value as Theme);
-});
+const settings = new SettingsPopup(
+  state,
+  (theme: Theme) => mapView.setTheme(theme),
+  () => mapView.getTheme(),
+);
 
 followToggle.addEventListener("click", () => {
   mapView.setFollow(!mapView.getFollow());
+});
+
+// Settings popup toggle
+const settingsToggle = document.getElementById("settings-toggle")!;
+settingsToggle.addEventListener("click", () => {
+  settings.toggle();
 });
 
 // Help button (top-left map control)
@@ -125,6 +122,7 @@ document.addEventListener("keydown", (e) => {
   if (e.key === "Escape") {
     mapView.exitPinMode();
     sidebar.stopPinDrop();
+    settings.hide();
     closeSidebar();
   }
   if ((e.ctrlKey || e.metaKey) && e.key === "z" && !e.shiftKey) {

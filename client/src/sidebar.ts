@@ -6,7 +6,7 @@ import { ClientMessage, Maneuver } from "./types";
 import { reverseGeocode } from "./map";
 import { strings } from "./strings";
 import { escapeHtml } from "./html";
-import { formatDistanceKm } from "./geo";
+import { formatDistance as formatDistanceUnits, formatRouteSummary, formatDistanceLeft, formatLegDivider, formatSpeed } from "./units";
 
 const olc = new OpenLocationCode();
 
@@ -718,6 +718,7 @@ export class Sidebar {
   private renderRouteInfo() {
     const route = this.state.route;
     const live = this.state.liveRoute;
+    const units = this.state.units;
 
     if (!route) {
       if (this.state.waypoints.length >= 2) {
@@ -730,7 +731,7 @@ export class Sidebar {
 
     let html = `
       <div class="route-summary">
-        ${strings.route.summary(route.distance_km.toFixed(1), String(Math.round(route.duration_min)))}
+        ${formatRouteSummary(route.distance_km, route.duration_min, units.distance)}
       </div>
     `;
 
@@ -747,11 +748,11 @@ export class Sidebar {
             ${strings.route.liveEtaHeader}
           </div>
           <div class="live-eta-stats">
-            <span>${strings.route.kmLeft(live.distance_km.toFixed(1))}</span>
+            <span>${formatDistanceLeft(live.distance_km, units.distance)}</span>
             <span>&middot;</span>
             <span>${strings.route.minutes(String(Math.round(live.duration_min)))}</span>
             <span>&middot;</span>
-            <span>${strings.route.speed(live.speed_kmh.toFixed(1))}</span>
+            <span>${formatSpeed(live.speed_kmh, units.speed)}</span>
           </div>
           ${saved > 0.5 ? `<div class="live-eta-saved">${strings.route.saved(savedPct, Math.round(saved))}</div>` : ""}
         </div>
@@ -766,7 +767,7 @@ export class Sidebar {
       const leg = legsToShow[legIdx];
 
       if (legsToShow.length > 1) {
-        html += `<div class="leg-divider">${strings.route.legDivider(legIdx + 1, leg.distance_km.toFixed(1))}</div>`;
+        html += `<div class="leg-divider">${formatLegDivider(legIdx + 1, leg.distance_km, units.distance)}</div>`;
       }
 
       for (const m of leg.maneuvers) {
@@ -780,7 +781,7 @@ export class Sidebar {
 
   private renderManeuver(m: Maneuver): string {
     const icon = maneuverIcon(m.maneuver_type);
-    const dist = formatDistanceKm(m.distance_km);
+    const dist = formatDistanceUnits(m.distance_km, this.state.units.distance);
     const streets = m.street_names?.length ? m.street_names.join(", ") : "";
 
     return `
