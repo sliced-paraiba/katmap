@@ -6,6 +6,7 @@ import { ClientMessage, Maneuver } from "./types";
 import { reverseGeocode } from "./map";
 import { strings } from "./strings";
 import { escapeHtml } from "./html";
+import { formatDistanceKm } from "./geo";
 
 const olc = new OpenLocationCode();
 
@@ -225,12 +226,6 @@ function maneuverIcon(type: number): string {
     case 43: return "\u2302";       // BuildingExit
     default: return "\u2022";       // Fallback bullet
   }
-}
-
-function formatDistance(km: number): string {
-  if (km < 0.01) return "";
-  if (km < 1) return `${Math.round(km * 1000)} m`;
-  return `${km.toFixed(1)} km`;
 }
 
 export class Sidebar {
@@ -785,7 +780,7 @@ export class Sidebar {
 
   private renderManeuver(m: Maneuver): string {
     const icon = maneuverIcon(m.maneuver_type);
-    const dist = formatDistance(m.distance_km);
+    const dist = formatDistanceKm(m.distance_km);
     const streets = m.street_names?.length ? m.street_names.join(", ") : "";
 
     return `

@@ -20,3 +20,9 @@ export function haversineMeters(from: LonLat, to: LonLat): number {
 export function distanceMeters(a: LatLonLocation, b: LatLonLocation): number {
   return haversineMeters([a.lon, a.lat], [b.lon, b.lat]);
 }
+
+export function formatDistanceKm(km: number): string {
+  if (km < 0.01) return "";
+  if (km < 1) return `${Math.round(km * 1000)} m`;
+  return `${km.toFixed(1)} km`;
+}

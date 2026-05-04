@@ -2,8 +2,9 @@ import maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import "./snipe.css";
 import { decodePolyline } from "./polyline";
-import { distanceMeters } from "./geo";
+import { distanceMeters, formatDistanceKm } from "./geo";
 import { escapeHtml } from "./html";
+import { fitCoords, markerElement } from "./map-utils";
 import type { LonLat } from "./geo";
 import type { SnipeLocation, SnipeRoute, SnipeRouteRequest, SnipeStatus, TravelMode, UserLocation } from "./api-types";
 
@@ -74,18 +75,13 @@ async function api<T>(url: string, opts: RequestInit = {}): Promise<T> {
   return await res.json() as T;
 }
 function setStatus(s: string) { $("status").textContent = s; }
-function marker(className: string): HTMLElement {
-  const el = document.createElement("div");
-  el.className = `marker ${className}`;
-  return el;
-}
 function updateMarkers() {
   if (userLoc) {
-    if (!userMarker) userMarker = new maplibregl.Marker({ element: marker("user") }).addTo(map);
+    if (!userMarker) userMarker = new maplibregl.Marker({ element: markerElement("user") }).addTo(map);
     userMarker.setLngLat([userLoc.lon, userLoc.lat]);
   }
   if (streamerLoc) {
-    if (!streamerMarker) streamerMarker = new maplibregl.Marker({ element: marker("streamer") }).addTo(map);
+    if (!streamerMarker) streamerMarker = new maplibregl.Marker({ element: markerElement("streamer") }).addTo(map);
     streamerMarker.setLngLat([streamerLoc.lon, streamerLoc.lat]);
   }
 }
@@ -167,19 +163,14 @@ function renderRoute(data: SnipeRoute) {
   const source = map.getSource("route") as maplibregl.GeoJSONSource | undefined;
   if (source) source.setData(coords.length ? { type: "Feature", properties: {}, geometry: { type: "LineString", coordinates: coords } } : emptyFc());
   $("summary").textContent = `${data.distance_km.toFixed(1)} km · ${Math.round(data.duration_min)} min · ${mode}`;
-  $("steps").innerHTML = data.maneuvers.slice(0, 30).map((m) => `<li>${escapeHtml(m.instruction)} <span class="hint">${formatKm(m.distance_km)}</span></li>`).join("") || '<li class="hint">No maneuvers.</li>';
+  $("steps").innerHTML = data.maneuvers.slice(0, 30).map((m) => `<li>${escapeHtml(m.instruction)} <span class="hint">${formatDistanceKm(m.distance_km)}</span></li>`).join("") || '<li class="hint">No maneuvers.</li>';
   setStatus(`Updated ${new Date().toLocaleTimeString()}`);
   updateMarkers();
   if (follow && coords.length) fit(coords);
 }
 function fit(coords: LonLat[]) {
-  requestAnimationFrame(() => {
-    map.resize();
-    const bounds = coords.reduce((b, c) => b.extend(c), new maplibregl.LngLatBounds(coords[0], coords[0]));
-    map.fitBounds(bounds, { padding: { top: 80, right: 40, bottom: 220, left: 40 }, maxZoom: 17, duration: 400 });
-  });
+  fitCoords(map, coords, { padding: { top: 80, right: 40, bottom: 220, left: 40 }, maxZoom: 17, duration: 400 });
 }
-function formatKm(km: number): string { return km < 1 ? `${Math.round(km * 1000)} m` : `${km.toFixed(1)} km`; }
 function formatAge(ms: number): string {
   if (ms < 1000) return `${Math.round(ms)}ms`;
   if (ms < 60_000) return `${Math.round(ms / 1000)}s`;
