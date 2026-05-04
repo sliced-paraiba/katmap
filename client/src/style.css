@@ -563,6 +563,31 @@ html, body {
   border: 1px solid var(--border);
 }
 
+.toast-update {
+  pointer-events: auto !important;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  max-width: min(520px, calc(100vw - 32px));
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+}
+
+.toast-reload-btn {
+  border: 1px solid var(--accent);
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  color: var(--accent-hover);
+  border-radius: 999px;
+  padding: 4px 10px;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.toast-reload-btn:hover {
+  background: color-mix(in srgb, var(--accent) 28%, transparent);
+}
+
 /* Connection status dot in sidebar header */
 .connection-status {
   display: inline-block;

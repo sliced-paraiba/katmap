@@ -7,6 +7,11 @@ import { strings } from "./strings";
 
 const state = new AppState();
 
+type VersionInfo = {
+  commit: string;
+  build_time: string;
+};
+
 const conn = new Connection(
   (msg) => state.applyServerMessage(msg),
   (connected) => {
@@ -250,8 +255,10 @@ toastContainer.id = "toast-container";
 document.body.appendChild(toastContainer);
 
 let hideTimeout: ReturnType<typeof setTimeout> | null = null;
+let updateToastVisible = false;
 
 function showToast(message: string, type: "error" | "success" | "info" = "info") {
+  if (updateToastVisible) return;
   if (hideTimeout) clearTimeout(hideTimeout);
 
   toastContainer.textContent = message;
@@ -262,3 +269,52 @@ function showToast(message: string, type: "error" | "success" | "info" = "info")
     toastContainer.classList.remove("toast-visible");
   }, duration);
 }
+
+function showUpdateToast() {
+  updateToastVisible = true;
+  if (hideTimeout) clearTimeout(hideTimeout);
+
+  toastContainer.className = "toast toast-info toast-update toast-visible";
+  toastContainer.innerHTML = `
+    <span>${strings.toast.updateAvailable}</span>
+    <button type="button" class="toast-reload-btn">${strings.toast.reload}</button>
+  `;
+  toastContainer
+    .querySelector<HTMLButtonElement>(".toast-reload-btn")
+    ?.addEventListener("click", () => window.location.reload());
+}
+
+function sameVersion(a: VersionInfo, b: VersionInfo): boolean {
+  return a.commit === b.commit && a.build_time === b.build_time;
+}
+
+async function fetchVersion(): Promise<VersionInfo | null> {
+  try {
+    const resp = await fetch(`/api/version?ts=${Date.now()}`, { cache: "no-store" });
+    if (!resp.ok) return null;
+    return await resp.json() as VersionInfo;
+  } catch {
+    return null;
+  }
+}
+
+async function startUpdatePolling() {
+  const loadedVersion = await fetchVersion();
+  if (!loadedVersion) return;
+
+  let updateShown = false;
+  const checkForUpdate = async () => {
+    if (updateShown) return;
+    const latestVersion = await fetchVersion();
+    if (!latestVersion || sameVersion(loadedVersion, latestVersion)) return;
+    updateShown = true;
+    showUpdateToast();
+  };
+
+  window.setInterval(checkForUpdate, 60_000);
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") void checkForUpdate();
+  });
+}
+
+void startUpdatePolling();

@@ -67,6 +67,16 @@ pub struct AdminHistoryEntry {
     pub telemetry: Option<Vec<crate::types::BreadcrumbPoint>>,
 }
 
+#[derive(Debug, Clone)]
+pub struct IncompleteTrail {
+    pub id: i64,
+    pub started_at: i64,
+    pub ended_at: i64,
+    pub session_id: Option<String>,
+    pub breadcrumbs: Vec<[f64; 2]>,
+    pub telemetry: Option<Vec<crate::types::BreadcrumbPoint>>,
+}
+
 #[derive(Debug, Clone, Deserialize)]
 pub struct AdminUpdateEntry {
     #[serde(default)]
@@ -268,6 +278,49 @@ pub async fn upsert_incomplete_trail(
             })?;
         let id = guard.last_insert_rowid();
         Ok(id)
+    }
+}
+
+pub async fn load_latest_incomplete_trail(
+    state: &HistoryState,
+    streamer_id: &str,
+    platform: &str,
+) -> Result<Option<IncompleteTrail>, String> {
+    let guard = state.db.lock().await;
+
+    let mut stmt = guard
+        .prepare(
+            "SELECT id, started_at, ended_at, session_id, breadcrumbs, telemetry
+             FROM streams
+             WHERE streamer_id = ?1 AND platform = ?2 AND completed = 0
+             ORDER BY ended_at DESC
+             LIMIT 1",
+        )
+        .map_err(|e| e.to_string())?;
+
+    let result = stmt.query_row(params![streamer_id, platform], |row| {
+        let breadcrumbs_json: String = row.get(4)?;
+        let telemetry_json: Option<String> = row.get(5)?;
+        let breadcrumbs: Vec<[f64; 2]> =
+            serde_json::from_str(&breadcrumbs_json).unwrap_or_default();
+        let telemetry = telemetry_json
+            .as_deref()
+            .and_then(|json| serde_json::from_str::<Vec<crate::types::BreadcrumbPoint>>(json).ok());
+
+        Ok(IncompleteTrail {
+            id: row.get(0)?,
+            started_at: row.get(1)?,
+            ended_at: row.get(2)?,
+            session_id: row.get(3)?,
+            breadcrumbs,
+            telemetry,
+        })
+    });
+
+    match result {
+        Ok(trail) => Ok(Some(trail)),
+        Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+        Err(e) => Err(e.to_string()),
     }
 }
 

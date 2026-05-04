@@ -156,6 +156,8 @@ export const strings = {
   toast: {
     disconnected: "Disconnected from server. Reconnecting...",
     connected: "Connected",
+    updateAvailable: "KatMap has been updated. Reload when you're ready.",
+    reload: "Reload",
   },
 
   /** First-time help / onboarding card */

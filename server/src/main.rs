@@ -99,6 +99,57 @@ async fn main() {
     let history_state: &'static history::HistoryState =
         Box::leak(Box::new(history::init_history(history::db_path()).await));
 
+    const RESUME_INCOMPLETE_WINDOW_MS: i64 = 15 * 60 * 1000;
+    let initial_trail = match history::load_latest_incomplete_trail(
+        history_state,
+        &display_name,
+        "companion",
+    )
+    .await
+    {
+        Ok(Some(trail)) => {
+            let age_ms = chrono::Utc::now().timestamp_millis() - trail.ended_at;
+            if age_ms <= RESUME_INCOMPLETE_WINDOW_MS {
+                tracing::warn!(
+                    "Recovered incomplete companion trail id={} with {} coords; resuming as active session",
+                    trail.id,
+                    trail.breadcrumbs.len()
+                );
+                companion::TrailAccumulator::from_incomplete_trail(
+                    trail,
+                    format!("{} - recovered session", display_name),
+                )
+            } else {
+                tracing::warn!(
+                    "Recovered stale incomplete companion trail id={} from {}ms ago; marking complete",
+                    trail.id,
+                    age_ms
+                );
+                let telemetry_json = trail
+                    .telemetry
+                    .as_ref()
+                    .and_then(|telemetry| serde_json::to_string(telemetry).ok());
+                if let Err(e) = history::mark_trail_complete(
+                    history_state,
+                    trail.id,
+                    trail.ended_at,
+                    &trail.breadcrumbs,
+                    telemetry_json.as_deref(),
+                )
+                .await
+                {
+                    tracing::warn!("Failed to mark stale incomplete trail complete: {e}");
+                }
+                companion::TrailAccumulator::default()
+            }
+        }
+        Ok(None) => companion::TrailAccumulator::default(),
+        Err(e) => {
+            tracing::warn!("Failed to load incomplete companion trail: {e}");
+            companion::TrailAccumulator::default()
+        }
+    };
+
     let state = AppState {
         waypoints: Arc::new(RwLock::new(Vec::new())),
         undo_stack: Arc::new(RwLock::new(Vec::new())),
@@ -111,7 +162,7 @@ async fn main() {
         avatar_path: avatar_path.clone(),
         history: Some(history_state),
         social_links,
-        trail: Arc::new(Mutex::new(companion::TrailAccumulator::default())),
+        trail: Arc::new(Mutex::new(initial_trail)),
         live_location: Arc::new(RwLock::new(ws::LiveLocation::default())),
         snipe_route_limiter: Arc::new(snipe::SnipeRouteLimiter::new(snipe_route_limit_per_minute)),
         recent_location_pushes: debug::empty_recent_location_pushes(),
@@ -194,15 +245,42 @@ async fn main() {
     tracing::info!("Listening on {addr}");
     let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
 
-    // Graceful shutdown: save any active trail
-    tokio::spawn(async move {
-        tokio::signal::ctrl_c().await.ok();
-        tracing::info!("Shutdown signal received, saving active trail...");
-        companion::save_on_shutdown(&state).await;
-        std::process::exit(0);
-    });
+    // Graceful shutdown: save any active trail on Ctrl-C and systemd SIGTERM.
+    let shutdown_state = state.clone();
+    axum::serve(listener, app)
+        .with_graceful_shutdown(async move {
+            shutdown_signal().await;
+            tracing::info!("Shutdown signal received, saving active trail...");
+            companion::save_on_shutdown(&shutdown_state).await;
+        })
+        .await
+        .unwrap();
+}
 
-    axum::serve(listener, app).await.unwrap();
+async fn shutdown_signal() {
+    let ctrl_c = async {
+        if let Err(e) = tokio::signal::ctrl_c().await {
+            tracing::warn!("failed to install Ctrl-C handler: {e}");
+        }
+    };
+
+    #[cfg(unix)]
+    let terminate = async {
+        match tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()) {
+            Ok(mut stream) => {
+                stream.recv().await;
+            }
+            Err(e) => tracing::warn!("failed to install SIGTERM handler: {e}"),
+        }
+    };
+
+    #[cfg(not(unix))]
+    let terminate = std::future::pending::<()>();
+
+    tokio::select! {
+        _ = ctrl_c => {},
+        _ = terminate => {},
+    }
 }
 
 async fn config_handler(AxumState(state): AxumState<AppState>) -> impl IntoResponse {

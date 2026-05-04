@@ -1,8 +1,8 @@
 use axum::{
+    Json,
     extract::State,
     http::{HeaderMap, StatusCode},
     response::IntoResponse,
-    Json,
 };
 use serde::Deserialize;
 use tokio::time::{Duration, Instant};
@@ -50,6 +50,47 @@ pub(crate) struct TrailAccumulator {
 }
 
 impl TrailAccumulator {
+    pub(crate) fn from_incomplete_trail(
+        recovered: crate::history::IncompleteTrail,
+        fallback_session_name: String,
+    ) -> Self {
+        let mut points = recovered.telemetry.unwrap_or_else(|| {
+            recovered
+                .breadcrumbs
+                .iter()
+                .enumerate()
+                .map(|(idx, [lon, lat])| BreadcrumbPoint {
+                    timestamp_ms: recovered.started_at + idx as i64,
+                    lon: *lon,
+                    lat: *lat,
+                    altitude: None,
+                    accuracy: None,
+                    altitude_accuracy: None,
+                    heading: None,
+                    speed: None,
+                })
+                .collect()
+        });
+        points.sort_by_key(|p| p.timestamp_ms);
+        let last_location_ts = points
+            .last()
+            .map(|p| p.timestamp_ms)
+            .unwrap_or(recovered.ended_at);
+
+        Self {
+            points,
+            started_at: recovered.started_at,
+            last_location_ts,
+            incomplete_trail_id: Some(recovered.id),
+            session_active: true,
+            // If this really is a mid-stream restart, the next location packet will
+            // refresh this. If not, the stale detector will finalize the incomplete
+            // row after the usual timeout instead of leaving it dangling forever.
+            last_push_at: Some(Instant::now()),
+            session_name: recovered.session_id.unwrap_or(fallback_session_name),
+        }
+    }
+
     /// Extract simple `[lon, lat]` coords from the breadcrumb points.
     pub fn coords(&self) -> Vec<[f64; 2]> {
         self.points.iter().map(|p| [p.lon, p.lat]).collect()
@@ -111,7 +152,7 @@ pub async fn location_handler(
             heading,
             speed,
         } => {
-            let (coords, need_upsert) = {
+            let (coords, persist_snapshot) = {
                 let mut trail = state.trail.lock().await;
 
                 if !trail.session_active {
@@ -125,8 +166,13 @@ pub async fn location_handler(
                         .map(|t| t.format("%Y-%m-%d %H:%M UTC").to_string())
                         .unwrap_or_else(|| now.to_string());
                     trail.session_name = format!("{} - {}", state.display_name, dt);
-                    tracing::info!("companion: auto-starting session '{}' on first location push", trail.session_name);
-                    let _ = state.tx.send(crate::types::ServerMessage::LiveStatus { live: true });
+                    tracing::info!(
+                        "companion: auto-starting session '{}' on first location push",
+                        trail.session_name
+                    );
+                    let _ = state
+                        .tx
+                        .send(crate::types::ServerMessage::LiveStatus { live: true });
                 }
 
                 let ts = timestamp_ms.unwrap_or_else(|| chrono::Utc::now().timestamp_millis());
@@ -153,10 +199,12 @@ pub async fn location_handler(
                 trail.last_push_at = Some(Instant::now());
 
                 let coords = trail.coords();
-                let need_upsert = trail.started_at > 0
-                    && trail.incomplete_trail_id.is_none()
-                    && trail.session_active;
-                (coords, need_upsert)
+                let persist_snapshot = if trail.started_at > 0 && trail.session_active {
+                    Some(trail.clone())
+                } else {
+                    None
+                };
+                (coords, persist_snapshot)
             }; // single lock released
 
             // Broadcast location with full telemetry
@@ -190,16 +238,16 @@ pub async fn location_handler(
                 });
             }
 
-            // Upsert to SQLite on first location of a new session
-            if need_upsert {
+            // Upsert to SQLite on every location packet. This makes deploys,
+            // process crashes, and restarts mid-stream safe: the incomplete row
+            // is always close to the in-memory trail and can be resumed on boot.
+            if let Some(snapshot) = persist_snapshot {
                 if let Some(history) = state.history {
-                    let trail = state.trail.lock().await;
                     let streamer_id = state.display_name.clone();
-                    let session_name = trail.session_name.clone();
-                    let started_at = trail.started_at;
-                    let coords_clone = trail.coords();
-                    let telemetry_json = serde_json::to_string(&trail.points).ok();
-                    drop(trail);
+                    let session_name = snapshot.session_name.clone();
+                    let started_at = snapshot.started_at;
+                    let coords_clone = snapshot.coords();
+                    let telemetry_json = serde_json::to_string(&snapshot.points).ok();
 
                     match upsert_incomplete_trail(
                         history,
@@ -214,7 +262,9 @@ pub async fn location_handler(
                     {
                         Ok(id) => {
                             let mut trail = state.trail.lock().await;
-                            trail.incomplete_trail_id = Some(id);
+                            if trail.session_active && trail.incomplete_trail_id.is_none() {
+                                trail.incomplete_trail_id = Some(id);
+                            }
                         }
                         Err(e) => tracing::warn!("companion: failed to upsert trail: {}", e),
                     }
@@ -234,7 +284,9 @@ pub async fn location_handler(
 
             state.trail.lock().await.reset();
             tracing::info!("companion: session stopped");
-            let _ = state.tx.send(crate::types::ServerMessage::LiveStatus { live: false });
+            let _ = state
+                .tx
+                .send(crate::types::ServerMessage::LiveStatus { live: false });
 
             (StatusCode::OK, "Session stopped").into_response()
         }
@@ -269,7 +321,8 @@ async fn finalize_trail(state: &AppState, trail: &TrailAccumulator, reason: &str
                 now,
                 &coords,
                 telemetry_json.as_deref(),
-            ).await;
+            )
+            .await;
         }
     }
 }
@@ -352,8 +405,7 @@ fn haversine_m(lat1: f64, lon1: f64, lat2: f64, lon2: f64) -> f64 {
     let dlon = (lon2 - lon1).to_radians();
     let lat1 = lat1.to_radians();
     let lat2 = lat2.to_radians();
-    let a = (dlat / 2.0).sin().powi(2)
-        + lat1.cos() * lat2.cos() * (dlon / 2.0).sin().powi(2);
+    let a = (dlat / 2.0).sin().powi(2) + lat1.cos() * lat2.cos() * (dlon / 2.0).sin().powi(2);
     2.0 * r * a.sqrt().asin()
 }
 
@@ -412,18 +464,44 @@ pub async fn stale_detector(state: AppState) {
             }
 
             state.trail.lock().await.reset();
-            let _ = state.tx.send(crate::types::ServerMessage::LiveStatus { live: false });
+            let _ = state
+                .tx
+                .send(crate::types::ServerMessage::LiveStatus { live: false });
         }
     }
 }
 
-/// Save any active trail on shutdown.
+/// Persist any active trail on shutdown without completing it.
+///
+/// Deploys/restarts mid-stream should be resumable. Explicit `stop` and stale
+/// detection are the only paths that mark a trail complete.
 pub async fn save_on_shutdown(state: &AppState) {
     let trail = state.trail.lock().await;
     let snapshot = trail.clone();
     drop(trail);
 
     if snapshot.session_active && !snapshot.points.is_empty() {
-        finalize_trail(state, &snapshot, "shutdown").await;
+        if let Some(history) = state.history {
+            let coords = snapshot.coords();
+            let telemetry_json = serde_json::to_string(&snapshot.points).ok();
+            match upsert_incomplete_trail(
+                history,
+                &state.display_name,
+                "companion",
+                snapshot.started_at,
+                &snapshot.session_name,
+                &coords,
+                telemetry_json.as_deref(),
+            )
+            .await
+            {
+                Ok(id) => tracing::info!(
+                    "companion: persisted incomplete trail id={} on shutdown ({} coords)",
+                    id,
+                    coords.len()
+                ),
+                Err(e) => tracing::warn!("companion: failed to persist trail on shutdown: {}", e),
+            }
+        }
     }
 }
