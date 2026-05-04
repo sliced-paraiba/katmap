@@ -1,7 +1,7 @@
 import { Connection } from "./net";
 import { AppState } from "./state";
 import { MapView, reverseGeocode } from "./map";
-import { Theme } from "./themes";
+import { Theme, THEMES, isTheme } from "./themes";
 import { Sidebar } from "./sidebar";
 import { strings } from "./strings";
 
@@ -29,11 +29,10 @@ const send = (msg: Parameters<Connection["send"]>[0]) => conn.send(msg);
 // Theme dropdown (placed over the map)
 const themeSelect = document.getElementById("theme-select") as HTMLSelectElement;
 
-const VALID_THEMES: Theme[] = ["dark", "light", "bright", "fiord", "toner", "basic", "neon", "midnight", "raster"];
 const STORAGE_KEY = "katmap-theme";
 
 // Populate theme options from strings
-for (const key of VALID_THEMES) {
+for (const key of THEMES) {
   const opt = document.createElement("option");
   opt.value = key;
   opt.textContent = strings.themes[key as keyof typeof strings.themes];
@@ -42,8 +41,8 @@ for (const key of VALID_THEMES) {
 
 function loadStoredTheme(): Theme {
   try {
-    const stored = localStorage.getItem(STORAGE_KEY) as Theme | null;
-    if (stored && VALID_THEMES.includes(stored) && stored !== "raster") return stored;
+    const stored = localStorage.getItem(STORAGE_KEY);
+    if (stored && isTheme(stored) && stored !== "raster") return stored;
   } catch { /* ignore */ }
   return "dark";
 }

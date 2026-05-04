@@ -1,4 +1,5 @@
 import "./debug-location-pushes.css";
+import { escapeHtml } from "./html";
 
 type LocationPayload = {
   type: "location";
@@ -141,8 +142,4 @@ function shortCommit(commit: string): string {
 
 function setStatus(message: string) {
   $("status").textContent = message;
-}
-
-function escapeHtml(s: string): string {
-  return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]!));
 }

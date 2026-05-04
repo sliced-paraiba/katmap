@@ -1,7 +1,8 @@
 import maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import "./admin-history.css";
-import { Theme, RASTER_STYLE, applyTheme, registerPmtiles } from "./themes";
+import { Theme, RASTER_STYLE, applyTheme, isTheme, registerPmtiles } from "./themes";
+import { escapeHtml } from "./html";
 
 type LonLat = [number, number];
 
@@ -96,8 +97,8 @@ const themeSelect = $("theme-select") as HTMLSelectElement;
 
 function loadStoredTheme(): Theme {
   try {
-    const stored = localStorage.getItem(STORAGE_KEY) as Theme | null;
-    if (stored && ["dark","light","bright","fiord","toner","basic","neon","midnight","raster"].includes(stored)) return stored;
+    const stored = localStorage.getItem(STORAGE_KEY);
+    if (stored && isTheme(stored)) return stored;
   } catch { /* ignore */ }
   return "dark";
 }
@@ -362,7 +363,3 @@ $("save-edits").onclick = async () => {
   current.edited_breadcrumbs = editedPoints(current).map(([, p]) => p);
   renderList();
 };
-
-function escapeHtml(s: string): string {
-  return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]!));
-}

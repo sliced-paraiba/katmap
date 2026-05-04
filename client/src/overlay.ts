@@ -4,6 +4,8 @@ import { ServerMessage } from "./types";
 import { decodePolyline } from "./polyline";
 import { strings } from "./strings";
 import { Theme, RASTER_STYLE, applyTheme, registerPmtiles } from "./themes";
+import { warmEndpointFeatureCollection, warmGradientExpression } from "./gradients";
+import { haversineMeters } from "./geo";
 
 // URL params for OBS configurability
 const params = new URLSearchParams(window.location.search);
@@ -337,17 +339,6 @@ function estimateSpeedMps(
   return Number.isFinite(speed) ? speed : null;
 }
 
-function haversineMeters(from: [number, number], to: [number, number]): number {
-  const r = 6_371_000;
-  const [lon1, lat1] = from.map((v) => v * Math.PI / 180) as [number, number];
-  const [lon2, lat2] = to.map((v) => v * Math.PI / 180) as [number, number];
-  const dLat = lat2 - lat1;
-  const dLon = lon2 - lon1;
-  const a = Math.sin(dLat / 2) ** 2
-    + Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLon / 2) ** 2;
-  return 2 * r * Math.asin(Math.sqrt(a));
-}
-
 function finiteNumber(value: number | null | undefined): number | null {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
@@ -382,45 +373,6 @@ setInterval(() => {
     setOverlayStatus("live", strings.overlay.liveGps);
   }
 }, 1000);
-
-function warmGradientExpression(): maplibregl.ExpressionSpecification {
-  return [
-    "interpolate",
-    ["linear"],
-    ["line-progress"],
-    0,
-    "#fbbf24",
-    0.3,
-    "#f97316",
-    0.6,
-    "#ef4444",
-    0.85,
-    "#dc2626",
-    1,
-    "#991b1b",
-  ] as maplibregl.ExpressionSpecification;
-}
-
-function warmEndpointFeatureCollection(coords: [number, number][]) {
-  const start = coords[0];
-  const end = coords[coords.length - 1];
-
-  return {
-    type: "FeatureCollection" as const,
-    features: [
-      {
-        type: "Feature" as const,
-        properties: { kind: "start", color: "#fbbf24" },
-        geometry: { type: "Point" as const, coordinates: start },
-      },
-      {
-        type: "Feature" as const,
-        properties: { kind: "end", color: "#991b1b" },
-        geometry: { type: "Point" as const, coordinates: end },
-      },
-    ],
-  };
-}
 
 // ── Start ──────────────────────────────────────────────────────────────
 

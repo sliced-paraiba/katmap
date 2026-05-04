@@ -5,6 +5,7 @@ import { AppState } from "./state";
 import { ClientMessage, Maneuver } from "./types";
 import { reverseGeocode } from "./map";
 import { strings } from "./strings";
+import { escapeHtml } from "./html";
 
 const olc = new OpenLocationCode();
 
@@ -900,12 +901,6 @@ export class Sidebar {
       });
     });
   }
-}
-
-function escapeHtml(s: string): string {
-  const div = document.createElement("div");
-  div.textContent = s;
-  return div.innerHTML;
 }
 
 // Toast helper (mirrors any existing toast in main.ts if present)

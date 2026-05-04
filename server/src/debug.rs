@@ -60,19 +60,6 @@ pub async fn record_location_push(recent: &RecentLocationPushes, payload: Locati
     });
 }
 
-fn is_debug_authorized(headers: &HeaderMap, state: &AppState) -> bool {
-    let expected = std::env::var("ADMIN_API_KEY")
-        .ok()
-        .filter(|s| !s.is_empty())
-        .unwrap_or_else(|| state.companion_api_key.clone());
-
-    headers
-        .get("authorization")
-        .and_then(|v| v.to_str().ok())
-        .and_then(|v| v.strip_prefix("Bearer "))
-        .is_some_and(|token| token == expected)
-}
-
 fn unauthorized() -> axum::response::Response {
     (StatusCode::UNAUTHORIZED, "Invalid or missing debug token").into_response()
 }
@@ -85,7 +72,7 @@ pub async fn snapshot_handler(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> impl IntoResponse {
-    if !is_debug_authorized(&headers, &state) {
+    if !crate::auth::is_admin_authorized(&headers, &state.companion_api_key) {
         return unauthorized();
     }
 

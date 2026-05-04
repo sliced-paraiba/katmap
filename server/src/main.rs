@@ -1,3 +1,4 @@
+mod auth;
 mod companion;
 mod debug;
 #[cfg(test)]

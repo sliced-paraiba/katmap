@@ -2,6 +2,8 @@ import maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import "./snipe.css";
 import { decodePolyline } from "./polyline";
+import { distanceMeters } from "./geo";
+import { escapeHtml } from "./html";
 
 type LonLat = [number, number];
 type TravelMode = "walking" | "cycling" | "car";
@@ -132,8 +134,8 @@ async function route(force = false) {
     if (!status.live || !streamerLoc) { setStatus("Streamer is offline"); clearRoute(); return; }
     if (!userLoc) { setStatus("Waiting for your GPS…"); return; }
     const now = Date.now();
-    const movedUser = !lastRouteUser || distM(userLoc, lastRouteUser) > 20;
-    const movedStreamer = !lastRouteStreamer || distM(streamerLoc, lastRouteStreamer) > 20;
+    const movedUser = !lastRouteUser || distanceMeters(userLoc, lastRouteUser) > 20;
+    const movedStreamer = !lastRouteStreamer || distanceMeters(streamerLoc, lastRouteStreamer) > 20;
     if (!force && !movedUser && !movedStreamer && now - lastRouteAt < 10000) return;
     const data = await api<SnipeRoute>("/api/snipe/route", { method: "POST", body: JSON.stringify({ lat: userLoc.lat, lon: userLoc.lon, mode }) });
     streamerLoc = data.streamer;
@@ -176,15 +178,3 @@ function fit(coords: LonLat[]) {
   });
 }
 function formatKm(km: number): string { return km < 1 ? `${Math.round(km * 1000)} m` : `${km.toFixed(1)} km`; }
-function distM(a: Location, b: Location): number {
-  const R = 6371000;
-  const dLat = (b.lat - a.lat) * Math.PI / 180;
-  const dLon = (b.lon - a.lon) * Math.PI / 180;
-  const lat1 = a.lat * Math.PI / 180;
-  const lat2 = b.lat * Math.PI / 180;
-  const h = Math.sin(dLat / 2) ** 2 + Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLon / 2) ** 2;
-  return 2 * R * Math.asin(Math.sqrt(h));
-}
-function escapeHtml(s: string): string {
-  return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]!));
-}

@@ -128,15 +128,8 @@ pub async fn location_handler(
     Json(push): Json<LocationPush>,
 ) -> impl IntoResponse {
     // Auth check
-    let auth = headers
-        .get("authorization")
-        .and_then(|v| v.to_str().ok())
-        .and_then(|v| v.strip_prefix("Bearer "));
-    match auth {
-        Some(token) if token == state.companion_api_key => {}
-        _ => {
-            return (StatusCode::UNAUTHORIZED, "Invalid or missing API key").into_response();
-        }
+    if !crate::auth::is_companion_authorized(&headers, &state.companion_api_key) {
+        return (StatusCode::UNAUTHORIZED, "Invalid or missing API key").into_response();
     }
 
     crate::debug::record_location_push(&state.recent_location_pushes, push.clone()).await;
@@ -413,13 +406,8 @@ pub async fn status_handler(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> impl IntoResponse {
-    let auth = headers
-        .get("authorization")
-        .and_then(|v| v.to_str().ok())
-        .and_then(|v| v.strip_prefix("Bearer "));
-    match auth {
-        Some(token) if token == state.companion_api_key => {}
-        _ => return (StatusCode::UNAUTHORIZED, "Invalid or missing API key").into_response(),
+    if !crate::auth::is_companion_authorized(&headers, &state.companion_api_key) {
+        return (StatusCode::UNAUTHORIZED, "Invalid or missing API key").into_response();
     }
 
     let trail = state.trail.lock().await;

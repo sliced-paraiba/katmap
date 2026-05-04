@@ -114,16 +114,7 @@ impl SnipeRouteLimiter {
 }
 
 fn is_authorized(headers: &HeaderMap) -> bool {
-    let expected = match std::env::var("SNIPING_API_KEY") {
-        Ok(token) if !token.is_empty() => token,
-        _ => return false,
-    };
-
-    headers
-        .get("authorization")
-        .and_then(|v| v.to_str().ok())
-        .and_then(|v| v.strip_prefix("Bearer "))
-        .is_some_and(|token| token == expected)
+    crate::auth::is_env_bearer_authorized(headers, "SNIPING_API_KEY")
 }
 
 fn unauthorized() -> axum::response::Response {

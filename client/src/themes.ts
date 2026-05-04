@@ -7,7 +7,8 @@
 import maplibregl from "maplibre-gl";
 import { Protocol } from "pmtiles";
 
-export type Theme = "dark" | "light" | "bright" | "fiord" | "toner" | "basic" | "neon" | "midnight" | "raster";
+export const THEMES = ["dark", "light", "bright", "fiord", "toner", "basic", "neon", "midnight", "raster"] as const;
+export type Theme = typeof THEMES[number];
 
 const TILES_BASE = (window.location.origin ?? "") + "/tiles";
 
@@ -43,6 +44,10 @@ export const RASTER_STYLE: maplibregl.StyleSpecification = {
     },
   ],
 };
+
+export function isTheme(value: string): value is Theme {
+  return (THEMES as readonly string[]).includes(value);
+}
 
 export function themeFile(theme: Exclude<Theme, "raster">): string {
   return THEME_FILE[theme];

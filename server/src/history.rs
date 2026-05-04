@@ -400,18 +400,6 @@ pub(crate) fn apply_trail_edits(points: &[[f64; 2]], edits: &TrailEdits) -> Vec<
         .collect()
 }
 
-fn is_admin_authorized(headers: &HeaderMap, state: &AppState) -> bool {
-    let expected = std::env::var("ADMIN_API_KEY")
-        .ok()
-        .filter(|s| !s.is_empty())
-        .unwrap_or_else(|| state.companion_api_key.clone());
-    headers
-        .get("authorization")
-        .and_then(|v| v.to_str().ok())
-        .and_then(|v| v.strip_prefix("Bearer "))
-        .is_some_and(|token| token == expected)
-}
-
 fn unauthorized() -> axum::response::Response {
     (StatusCode::UNAUTHORIZED, "Invalid or missing admin token").into_response()
 }
@@ -421,7 +409,7 @@ pub async fn admin_list_history_handler(
     headers: HeaderMap,
     Query(query): Query<AdminListQuery>,
 ) -> impl IntoResponse {
-    if !is_admin_authorized(&headers, &state) {
+    if !crate::auth::is_admin_authorized(&headers, &state.companion_api_key) {
         return unauthorized();
     }
     let history = match &state.history {
@@ -477,7 +465,7 @@ pub async fn admin_update_history_handler(
     Path(id): Path<i64>,
     Json(update): Json<AdminUpdateEntry>,
 ) -> impl IntoResponse {
-    if !is_admin_authorized(&headers, &state) {
+    if !crate::auth::is_admin_authorized(&headers, &state.companion_api_key) {
         return unauthorized();
     }
     let history = match &state.history {
@@ -510,7 +498,7 @@ pub async fn admin_update_edits_handler(
     Path(id): Path<i64>,
     Json(mut edits): Json<TrailEdits>,
 ) -> impl IntoResponse {
-    if !is_admin_authorized(&headers, &state) {
+    if !crate::auth::is_admin_authorized(&headers, &state.companion_api_key) {
         return unauthorized();
     }
     edits.hidden_indices.sort_unstable();
@@ -539,7 +527,7 @@ pub async fn admin_delete_history_handler(
     headers: HeaderMap,
     Path(id): Path<i64>,
 ) -> impl IntoResponse {
-    if !is_admin_authorized(&headers, &state) {
+    if !crate::auth::is_admin_authorized(&headers, &state.companion_api_key) {
         return unauthorized();
     }
     let history = match &state.history {

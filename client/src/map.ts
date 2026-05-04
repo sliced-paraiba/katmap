@@ -4,6 +4,8 @@ import { AppState } from "./state";
 import { ClientMessage, Waypoint } from "./types";
 import { strings } from "./strings";
 import { Theme, RASTER_STYLE, fetchStyle, registerPmtiles } from "./themes";
+import { decodePolyline } from "./polyline";
+import { coldEndpointFeatureCollection, coldGradientExpression, warmEndpointFeatureCollection, warmGradientExpression } from "./gradients";
 
 // Seattle center as ultimate fallback
 const DEFAULT_CENTER: [number, number] = [-122.3321, 47.6062];
@@ -681,7 +683,7 @@ export class MapView {
       properties: {},
       geometry: { type: "LineString", coordinates: coords },
     });
-    endpointSource?.setData(trailEndpointFeatureCollection(coords));
+    endpointSource?.setData(warmEndpointFeatureCollection(coords));
   }
 
   private updateHistoryTrail() {
@@ -728,115 +730,4 @@ export async function reverseGeocode(lat: number, lon: number): Promise<string |
   } catch {
     return null;
   }
-}
-
-function warmGradientExpression(): maplibregl.ExpressionSpecification {
-  return [
-    "interpolate",
-    ["linear"],
-    ["line-progress"],
-    0,
-    "#fbbf24", // amber
-    0.3,
-    "#f97316", // orange
-    0.6,
-    "#ef4444", // red
-    0.85,
-    "#dc2626", // darker red
-    1,
-    "#991b1b", // deep red
-  ] as maplibregl.ExpressionSpecification;
-}
-
-function coldGradientExpression(): maplibregl.ExpressionSpecification {
-  return [
-    "interpolate",
-    ["linear"],
-    ["line-progress"],
-    0,
-    "#60a5fa", // light blue
-    0.3,
-    "#3b82f6", // blue
-    0.6,
-    "#6366f1", // indigo
-    0.85,
-    "#7c3aed", // violet
-    1,
-    "#581c87", // deep purple
-  ] as maplibregl.ExpressionSpecification;
-}
-
-function trailEndpointFeatureCollection(coords: [number, number][]) {
-  const start = coords[0];
-  const end = coords[coords.length - 1];
-
-  return {
-    type: "FeatureCollection" as const,
-    features: [
-      {
-        type: "Feature" as const,
-        properties: { kind: "start", color: "#fbbf24" },
-        geometry: { type: "Point" as const, coordinates: start },
-      },
-      {
-        type: "Feature" as const,
-        properties: { kind: "end", color: "#991b1b" },
-        geometry: { type: "Point" as const, coordinates: end },
-      },
-    ],
-  };
-}
-
-function coldEndpointFeatureCollection(coords: [number, number][]) {
-  const start = coords[0];
-  const end = coords[coords.length - 1];
-
-  return {
-    type: "FeatureCollection" as const,
-    features: [
-      {
-        type: "Feature" as const,
-        properties: { kind: "start", color: "#60a5fa" },
-        geometry: { type: "Point" as const, coordinates: start },
-      },
-      {
-        type: "Feature" as const,
-        properties: { kind: "end", color: "#581c87" },
-        geometry: { type: "Point" as const, coordinates: end },
-      },
-    ],
-  };
-}
-
-// Decode Valhalla precision-6 encoded polyline
-function decodePolyline(encoded: string): [number, number][] {
-  const coords: [number, number][] = [];
-  let index = 0;
-  let lat = 0;
-  let lng = 0;
-
-  while (index < encoded.length) {
-    let shift = 0;
-    let result = 0;
-    let byte: number;
-    do {
-      byte = encoded.charCodeAt(index++) - 63;
-      result |= (byte & 0x1f) << shift;
-      shift += 5;
-    } while (byte >= 0x20);
-    lat += result & 1 ? ~(result >> 1) : result >> 1;
-
-    shift = 0;
-    result = 0;
-    do {
-      byte = encoded.charCodeAt(index++) - 63;
-      result |= (byte & 0x1f) << shift;
-      shift += 5;
-    } while (byte >= 0x20);
-    lng += result & 1 ? ~(result >> 1) : result >> 1;
-
-    coords.push([lng / 1e6, lat / 1e6]);
-  }
-
-  return coords;
 }
