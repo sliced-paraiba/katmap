@@ -1,5 +1,7 @@
 // Wire protocol types — mirrors server/src/types.rs
 
+import type { LonLat } from "./geo";
+
 export interface Waypoint {
   id: string;
   lat: number;
@@ -55,6 +57,8 @@ export type ClientMessage =
   | { type: "delete_all" }
   | { type: "undo" };
 
+export type LocationMessage = LocationUpdate & { type: "location" };
+
 // Server -> Client
 export type ServerMessage =
   | { type: "waypoint_list"; waypoints: Waypoint[] }
@@ -75,8 +79,8 @@ export type ServerMessage =
       speed_kmh: number;
     }
   | { type: "error"; message: string }
-  | { type: "location"; lat: number; lon: number; timestamp_ms: number; display_name?: string; altitude?: number | null; accuracy?: number | null; altitude_accuracy?: number | null; heading?: number | null; speed?: number | null }
-  | { type: "trail"; coords: [number, number][] }
+  | LocationMessage
+  | { type: "trail"; coords: LonLat[] }
   | { type: "live_status"; live: boolean };
 
 export interface BreadcrumbPoint {
@@ -98,6 +102,6 @@ export interface HistoryEntry {
   ended_at: number;
   stream_title?: string;
   viewer_count?: number;
-  breadcrumbs: [number, number][];
+  breadcrumbs: LonLat[];
   telemetry?: BreadcrumbPoint[];
 }

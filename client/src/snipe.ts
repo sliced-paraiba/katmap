@@ -4,15 +4,8 @@ import "./snipe.css";
 import { decodePolyline } from "./polyline";
 import { distanceMeters } from "./geo";
 import { escapeHtml } from "./html";
-
-type LonLat = [number, number];
-type TravelMode = "walking" | "cycling" | "car";
-
-interface Location { lat: number; lon: number; }
-interface UserLocation extends Location { accuracy?: number; }
-interface SnipeStatus { live: boolean; streamer: Location | null; }
-interface SnipeManeuver { instruction: string; distance_km: number; duration_min: number; street_names?: string[]; }
-interface SnipeRoute { streamer: Location; polyline: string; distance_km: number; duration_min: number; maneuvers: SnipeManeuver[]; }
+import type { LonLat } from "./geo";
+import type { SnipeLocation, SnipeRoute, SnipeRouteRequest, SnipeStatus, TravelMode, UserLocation } from "./api-types";
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const tokenEl = $("token") as HTMLInputElement;
@@ -21,10 +14,10 @@ tokenEl.addEventListener("input", () => localStorage.setItem("katmap-snipe-token
 
 let mode: TravelMode = "walking";
 let userLoc: UserLocation | null = null;
-let streamerLoc: Location | null = null;
+let streamerLoc: SnipeLocation | null = null;
 let lastRouteAt = 0;
 let lastRouteUser: UserLocation | null = null;
-let lastRouteStreamer: Location | null = null;
+let lastRouteStreamer: SnipeLocation | null = null;
 let userMarker: maplibregl.Marker | null = null;
 let streamerMarker: maplibregl.Marker | null = null;
 let routeTimer: number | null = null;
@@ -137,7 +130,8 @@ async function route(force = false) {
     const movedUser = !lastRouteUser || distanceMeters(userLoc, lastRouteUser) > 20;
     const movedStreamer = !lastRouteStreamer || distanceMeters(streamerLoc, lastRouteStreamer) > 20;
     if (!force && !movedUser && !movedStreamer && now - lastRouteAt < 10000) return;
-    const data = await api<SnipeRoute>("/api/snipe/route", { method: "POST", body: JSON.stringify({ lat: userLoc.lat, lon: userLoc.lon, mode }) });
+    const body: SnipeRouteRequest = { lat: userLoc.lat, lon: userLoc.lon, mode };
+    const data = await api<SnipeRoute>("/api/snipe/route", { method: "POST", body: JSON.stringify(body) });
     streamerLoc = data.streamer;
     lastRouteAt = now;
     lastRouteUser = { ...userLoc };

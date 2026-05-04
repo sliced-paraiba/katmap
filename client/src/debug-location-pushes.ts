@@ -1,35 +1,6 @@
 import "./debug-location-pushes.css";
 import { escapeHtml } from "./html";
-
-type LocationPayload = {
-  type: "location";
-  lat: number;
-  lon: number;
-  timestamp_ms?: number | null;
-  altitude?: number | null;
-  accuracy?: number | null;
-  altitude_accuracy?: number | null;
-  heading?: number | null;
-  speed?: number | null;
-};
-
-type StopPayload = { type: "stop" };
-type DebugPayload = LocationPayload | StopPayload;
-
-type DebugPush = {
-  received_at_ms: number;
-  payload: DebugPayload;
-};
-
-type DebugSnapshot = {
-  version: { commit: string; build_time: string };
-  live: boolean;
-  started_at?: number | null;
-  breadcrumb_count: number;
-  last_location_ts?: number | null;
-  latest_push?: DebugPush | null;
-  recent_pushes: DebugPush[];
-};
+import type { DebugPush, DebugSnapshot } from "./api-types";
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const tokenEl = $("token") as HTMLInputElement;

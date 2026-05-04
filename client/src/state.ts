@@ -162,19 +162,12 @@ export class AppState {
         this.errorTimestamp = Date.now();
         console.error("[server error]", msg.message);
         break;
-      case "location":
-        this.location = {
-          lat: msg.lat,
-          lon: msg.lon,
-          timestamp_ms: msg.timestamp_ms,
-          display_name: msg.display_name,
-          altitude: msg.altitude,
-          accuracy: msg.accuracy,
-          altitude_accuracy: msg.altitude_accuracy,
-          heading: msg.heading,
-          speed: msg.speed,
-        };
+      case "location": {
+        const { type, ...location } = msg;
+        void type;
+        this.location = location;
         break;
+      }
       case "trail":
         this.breadcrumbCoords = msg.coords;
         break;

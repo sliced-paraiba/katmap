@@ -1,6 +1,8 @@
+import type { LonLat } from "./geo";
+
 /** Decode a Valhalla precision-6 encoded polyline into [lon, lat][] coordinates. */
-export function decodePolyline(encoded: string): [number, number][] {
-  const coords: [number, number][] = [];
+export function decodePolyline(encoded: string): LonLat[] {
+  const coords: LonLat[] = [];
   let index = 0;
   let lat = 0;
   let lng = 0;

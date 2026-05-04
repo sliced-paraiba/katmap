@@ -1,4 +1,5 @@
 export type LonLat = [lon: number, lat: number];
+export type LatLon = [lat: number, lon: number];
 
 export interface LatLonLocation {
   lat: number;

@@ -3,41 +3,9 @@ import "maplibre-gl/dist/maplibre-gl.css";
 import "./admin-history.css";
 import { Theme, RASTER_STYLE, applyTheme, isTheme, registerPmtiles } from "./themes";
 import { escapeHtml } from "./html";
-
-type LonLat = [number, number];
-
-interface TrailEdits {
-  hidden_indices: number[];
-  moved_points: Record<string, LonLat>;
-}
-
-interface BreadcrumbTelemetry {
-  timestamp_ms: number;
-  lon: number;
-  lat: number;
-  altitude?: number | null;
-  accuracy?: number | null;
-  altitude_accuracy?: number | null;
-  heading?: number | null;
-  speed?: number | null;
-}
-
-interface AdminHistoryEntry {
-  id: number;
-  streamer_id: string;
-  platform: string;
-  started_at: number;
-  ended_at: number;
-  session_id?: string | null;
-  stream_title?: string | null;
-  viewer_count?: number | null;
-  hidden: boolean;
-  completed: boolean;
-  breadcrumbs: LonLat[];
-  edited_breadcrumbs: LonLat[];
-  edits: TrailEdits;
-  telemetry?: BreadcrumbTelemetry[] | null;
-}
+import type { AdminHistoryEntry } from "./api-types";
+import type { LonLat } from "./geo";
+import type { BreadcrumbPoint } from "./types";
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const tokenEl = $("token") as HTMLInputElement;
@@ -153,7 +121,7 @@ function editedPoints(entry: AdminHistoryEntry): [number, LonLat][] {
   return entry.breadcrumbs.map((_, i): [number, LonLat] => [i, effectivePoint(entry, i)]).filter(([i]) => !hidden.has(i));
 }
 
-function telemetryFor(entry: AdminHistoryEntry, idx: number): BreadcrumbTelemetry | null {
+function telemetryFor(entry: AdminHistoryEntry, idx: number): BreadcrumbPoint | null {
   return entry.telemetry?.[idx] ?? null;
 }
 
