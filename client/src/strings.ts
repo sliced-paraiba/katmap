@@ -147,9 +147,6 @@ export const strings = {
     speed: (speed: string) => `${speed} km/h`,
     /** Format: "{altitude} m alt" */
     altitude: (alt: string) => `${alt} m alt`,
-    /** Format: "ETA {eta}" */
-    etaLabel: (eta: string) => `ETA ${eta}`,
-    etaUnknown: "--",
     speedUnknown: "-- km/h",
     altUnknown: "-- m alt",
     coordsUnknown: "--, --",

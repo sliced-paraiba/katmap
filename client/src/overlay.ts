@@ -63,7 +63,6 @@ const map = new maplibregl.Map({
 
 let routePolyline: string | null = null;
 let routeCoords: [number, number][] = [];
-let routeDurationMin: number | null = null;
 let trailCoords: [number, number][] = [];
 let hasPosition = false;
 let currentPosition: [number, number] | null = null;
@@ -187,7 +186,6 @@ const telemetryEl = document.getElementById("telemetry")!;
 const statusBadge = document.getElementById("status-badge")!;
 const headingArrow = document.getElementById("heading-arrow")!;
 const telSpeed = document.getElementById("tel-speed")!;
-const telEta = document.getElementById("tel-eta")!;
 const telAlt = document.getElementById("tel-alt")!;
 const telCoords = document.getElementById("tel-coords")!;
 
@@ -199,6 +197,7 @@ function handleMessage(msg: ServerMessage) {
   switch (msg.type) {
     case "location": {
       lastLocationAt = Date.now();
+      const previousTimestampMs = lastLocationTimestampMs;
       lastLocationTimestampMs = msg.timestamp_ms;
       lastLiveStatus = true;
       setOverlayStatus("live", strings.overlay.liveGps);
@@ -225,18 +224,20 @@ function handleMessage(msg: ServerMessage) {
         headingArrow.classList.add("heading-unknown");
       }
 
+      const speedMps = finiteNumber(msg.speed)
+        ?? estimateSpeedMps(previousPosition, nextPosition, previousTimestampMs, msg.timestamp_ms);
+      const altitude = finiteNumber(msg.altitude);
+
       telSpeed.textContent =
-        msg.speed != null ? strings.overlay.speed((msg.speed * 3.6).toFixed(1)) : strings.overlay.speedUnknown;
+        speedMps != null ? strings.overlay.speed((speedMps * 3.6).toFixed(1)) : strings.overlay.speedUnknown;
       telAlt.textContent =
-        msg.altitude != null ? strings.overlay.altitude(`${Math.round(msg.altitude)}`) : strings.overlay.altUnknown;
+        altitude != null ? strings.overlay.altitude(`${Math.round(altitude)}`) : strings.overlay.altUnknown;
       telCoords.textContent = `${msg.lat.toFixed(4)}, ${msg.lon.toFixed(4)}`;
       break;
     }
 
     case "route_result": {
       routePolyline = msg.polyline;
-      routeDurationMin = msg.duration_min;
-      telEta.textContent = strings.overlay.etaLabel(formatEta(routeDurationMin));
       updateRouteLayer();
       if (followMode === "route") fitCoords(routeCoords, { bottom: 40 });
       break;
@@ -322,6 +323,35 @@ function fitCoords(coords: [number, number][], paddingOverrides: Partial<maplibr
   });
 }
 
+function estimateSpeedMps(
+  previousPosition: [number, number] | null,
+  nextPosition: [number, number],
+  previousTimestampMs: number | null,
+  nextTimestampMs: number,
+): number | null {
+  if (!previousPosition || previousTimestampMs == null) return null;
+  const dtSeconds = (nextTimestampMs - previousTimestampMs) / 1000;
+  if (!Number.isFinite(dtSeconds) || dtSeconds <= 0) return null;
+  const meters = haversineMeters(previousPosition, nextPosition);
+  const speed = meters / dtSeconds;
+  return Number.isFinite(speed) ? speed : null;
+}
+
+function haversineMeters(from: [number, number], to: [number, number]): number {
+  const r = 6_371_000;
+  const [lon1, lat1] = from.map((v) => v * Math.PI / 180) as [number, number];
+  const [lon2, lat2] = to.map((v) => v * Math.PI / 180) as [number, number];
+  const dLat = lat2 - lat1;
+  const dLon = lon2 - lon1;
+  const a = Math.sin(dLat / 2) ** 2
+    + Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLon / 2) ** 2;
+  return 2 * r * Math.asin(Math.sqrt(a));
+}
+
+function finiteNumber(value: number | null | undefined): number | null {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
 function bearingDegrees(from: [number, number], to: [number, number]): number | null {
   const [lon1, lat1] = from.map((v) => v * Math.PI / 180) as [number, number];
   const [lon2, lat2] = to.map((v) => v * Math.PI / 180) as [number, number];
@@ -330,15 +360,6 @@ function bearingDegrees(from: [number, number], to: [number, number]): number | 
   const x = Math.cos(lat1) * Math.sin(lat2) - Math.sin(lat1) * Math.cos(lat2) * Math.cos(dLon);
   const bearing = (Math.atan2(y, x) * 180 / Math.PI + 360) % 360;
   return Number.isFinite(bearing) ? bearing : null;
-}
-
-function formatEta(minutes: number | null): string {
-  if (minutes == null || !Number.isFinite(minutes)) return "--";
-  if (minutes < 1) return "<1m";
-  if (minutes < 60) return `${Math.round(minutes)}m`;
-  const hours = Math.floor(minutes / 60);
-  const mins = Math.round(minutes % 60);
-  return `${hours}h ${mins}m`;
 }
 
 function setOverlayStatus(kind: "live" | "stale" | "offline" | "waiting", label: string) {
