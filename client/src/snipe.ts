@@ -124,7 +124,11 @@ async function route(force = false) {
     const status = await api<SnipeStatus>("/api/snipe/status");
     streamerLoc = status.streamer ? { lat: status.streamer.lat, lon: status.streamer.lon } : null;
     updateMarkers();
-    if (!status.live || !streamerLoc) { setStatus("Streamer is offline"); clearRoute(); return; }
+    if (!status.live || !streamerLoc) {
+      setStatus(status.age_ms != null ? `Streamer is offline · last update ${formatAge(status.age_ms)} ago` : "Streamer is offline");
+      clearRoute();
+      return;
+    }
     if (!userLoc) { setStatus("Waiting for your GPS…"); return; }
     const now = Date.now();
     const movedUser = !lastRouteUser || distanceMeters(userLoc, lastRouteUser) > 20;
@@ -137,6 +141,10 @@ async function route(force = false) {
     lastRouteUser = { ...userLoc };
     lastRouteStreamer = { ...streamerLoc };
     renderRoute(data);
+    const ageMs = status.age_ms ?? 0;
+    if (ageMs > 60_000) {
+      setStatus(`Updated; streamer location is ${formatAge(ageMs)} old`);
+    }
   } catch (e) {
     if (e instanceof ApiError && e.status === 429) {
       const seconds = e.retryAfter ?? 15;
@@ -172,3 +180,8 @@ function fit(coords: LonLat[]) {
   });
 }
 function formatKm(km: number): string { return km < 1 ? `${Math.round(km * 1000)} m` : `${km.toFixed(1)} km`; }
+function formatAge(ms: number): string {
+  if (ms < 1000) return `${Math.round(ms)}ms`;
+  if (ms < 60_000) return `${Math.round(ms / 1000)}s`;
+  return `${Math.round(ms / 60_000)}m`;
+}

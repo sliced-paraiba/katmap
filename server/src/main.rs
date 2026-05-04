@@ -191,6 +191,7 @@ async fn main() {
         .route("/api/location", post(companion::location_handler))
         .route("/api/location/status", get(companion::status_handler))
         .route("/api/version", get(debug::version_handler))
+        .route("/api/health", get(debug::health_handler))
         .route("/api/debug/location-pushes", get(debug::snapshot_handler))
         .route(
             "/debug/location-pushes",

@@ -1,4 +1,4 @@
-use std::collections::VecDeque;
+use std::{collections::VecDeque, sync::atomic::Ordering};
 
 use axum::{
     Json,
@@ -34,8 +34,22 @@ pub struct DebugSnapshot {
     pub started_at: Option<i64>,
     pub breadcrumb_count: usize,
     pub last_location_ts: Option<i64>,
+    pub age_ms: Option<i64>,
+    pub last_push_age_ms: Option<u64>,
     pub latest_push: Option<DebugLocationPush>,
     pub recent_pushes: Vec<DebugLocationPush>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct HealthResponse {
+    pub ok: bool,
+    pub version: VersionInfo,
+    pub history: bool,
+    pub valhalla: bool,
+    pub live: bool,
+    pub connected_clients: usize,
+    pub last_location_ts: Option<i64>,
+    pub age_ms: Option<i64>,
 }
 
 pub fn version_info() -> VersionInfo {
@@ -68,6 +82,29 @@ pub async fn version_handler() -> impl IntoResponse {
     Json(version_info())
 }
 
+pub async fn health_handler(State(state): State<AppState>) -> impl IntoResponse {
+    let (live, last_location_ts) = {
+        let trail = state.trail.lock().await;
+        (
+            trail.session_active,
+            (!trail.points.is_empty()).then_some(trail.last_location_ts),
+        )
+    };
+    let age_ms =
+        last_location_ts.map(|ts| chrono::Utc::now().timestamp_millis().saturating_sub(ts));
+
+    Json(HealthResponse {
+        ok: true,
+        version: version_info(),
+        history: state.history.is_some(),
+        valhalla: !state.valhalla_url.is_empty(),
+        live,
+        connected_clients: state.connected_count.load(Ordering::Relaxed),
+        last_location_ts,
+        age_ms,
+    })
+}
+
 pub async fn snapshot_handler(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -76,15 +113,20 @@ pub async fn snapshot_handler(
         return unauthorized();
     }
 
-    let (live, started_at, breadcrumb_count, last_location_ts) = {
+    let (live, started_at, breadcrumb_count, last_location_ts, last_push_age_ms) = {
         let trail = state.trail.lock().await;
         (
             trail.session_active,
             trail.session_active.then_some(trail.started_at),
             trail.points.len(),
             (!trail.points.is_empty()).then_some(trail.last_location_ts),
+            trail
+                .last_push_at
+                .map(|last_push| last_push.elapsed().as_millis() as u64),
         )
     };
+    let age_ms =
+        last_location_ts.map(|ts| chrono::Utc::now().timestamp_millis().saturating_sub(ts));
 
     let recent_pushes: Vec<_> = state
         .recent_location_pushes
@@ -103,6 +145,8 @@ pub async fn snapshot_handler(
         started_at,
         breadcrumb_count,
         last_location_ts,
+        age_ms,
+        last_push_age_ms,
         latest_push,
         recent_pushes,
     })

@@ -44,6 +44,8 @@ function render(snapshot: DebugSnapshot) {
     started_at: fmt(snapshot.started_at),
     breadcrumb_count: String(snapshot.breadcrumb_count),
     last_location_ts: fmt(snapshot.last_location_ts),
+    age_ms: age(snapshot.age_ms),
+    last_push_age_ms: age(snapshot.last_push_age_ms),
   });
 
   const latest = snapshot.latest_push;
@@ -105,6 +107,13 @@ function value(v: unknown, suffix = ""): string {
 
 function fmt(ms?: number | null): string {
   return ms ? new Date(ms).toISOString() : "missing";
+}
+
+function age(ms?: number | null): string {
+  if (ms == null || !Number.isFinite(ms)) return "missing";
+  if (ms < 1000) return `${Math.round(ms)}ms`;
+  if (ms < 60_000) return `${Math.round(ms / 1000)}s`;
+  return `${Math.round(ms / 60_000)}m`;
 }
 
 function shortCommit(commit: string): string {

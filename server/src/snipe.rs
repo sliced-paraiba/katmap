@@ -45,6 +45,9 @@ pub struct SnipeRouteRequest {
 pub struct SnipeStatusResponse {
     pub live: bool,
     pub streamer: Option<SnipeLocation>,
+    pub last_location_ts: Option<i64>,
+    pub age_ms: Option<i64>,
+    pub last_push_age_ms: Option<u64>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -133,7 +136,18 @@ pub async fn status_handler(
         return unauthorized();
     }
 
-    let live = state.trail.lock().await.session_active;
+    let (live, last_location_ts, last_push_age_ms) = {
+        let trail = state.trail.lock().await;
+        (
+            trail.session_active,
+            (!trail.points.is_empty()).then_some(trail.last_location_ts),
+            trail
+                .last_push_at
+                .map(|last_push| last_push.elapsed().as_millis() as u64),
+        )
+    };
+    let age_ms =
+        last_location_ts.map(|ts| chrono::Utc::now().timestamp_millis().saturating_sub(ts));
     let loc = state.live_location.read().await;
     let streamer = if live && loc.valid {
         Some(SnipeLocation {
@@ -144,7 +158,17 @@ pub async fn status_handler(
         None
     };
 
-    (StatusCode::OK, Json(SnipeStatusResponse { live, streamer })).into_response()
+    (
+        StatusCode::OK,
+        Json(SnipeStatusResponse {
+            live,
+            streamer,
+            last_location_ts,
+            age_ms,
+            last_push_age_ms,
+        }),
+    )
+        .into_response()
 }
 
 pub async fn route_handler(

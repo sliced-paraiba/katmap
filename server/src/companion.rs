@@ -411,15 +411,30 @@ pub async fn status_handler(
     }
 
     let trail = state.trail.lock().await;
+    let last_location_ts = (!trail.points.is_empty()).then_some(trail.last_location_ts);
+    let age_ms =
+        last_location_ts.map(|ts| chrono::Utc::now().timestamp_millis().saturating_sub(ts));
+    let last_push_age_ms = trail
+        .last_push_at
+        .map(|last_push| last_push.elapsed().as_millis() as u64);
     if trail.session_active {
         Json(serde_json::json!({
             "live": true,
             "started_at": trail.started_at,
             "breadcrumb_count": trail.points.len(),
+            "last_location_ts": last_location_ts,
+            "age_ms": age_ms,
+            "last_push_age_ms": last_push_age_ms,
         }))
         .into_response()
     } else {
-        Json(serde_json::json!({ "live": false })).into_response()
+        Json(serde_json::json!({
+            "live": false,
+            "last_location_ts": last_location_ts,
+            "age_ms": age_ms,
+            "last_push_age_ms": last_push_age_ms,
+        }))
+        .into_response()
     }
 }
 

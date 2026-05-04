@@ -46,6 +46,9 @@ export type TravelMode = "walking" | "cycling" | "car";
 export interface SnipeStatus {
   live: boolean;
   streamer: SnipeLocation | null;
+  last_location_ts?: number | null;
+  age_ms?: number | null;
+  last_push_age_ms?: number | null;
 }
 
 export interface SnipeRouteRequest extends SnipeLocation {
@@ -93,6 +96,8 @@ export interface DebugSnapshot {
   started_at?: number | null;
   breadcrumb_count: number;
   last_location_ts?: number | null;
+  age_ms?: number | null;
+  last_push_age_ms?: number | null;
   latest_push?: DebugPush | null;
   recent_pushes: DebugPush[];
 }
@@ -101,6 +106,7 @@ export interface HealthResponse {
   ok: boolean;
   version: { commit: string; build_time: string };
   history: boolean;
+  valhalla: boolean;
   live: boolean;
   connected_clients: number;
   last_location_ts?: number | null;
