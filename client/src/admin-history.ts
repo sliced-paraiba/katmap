@@ -16,6 +16,7 @@ let entries: AdminHistoryEntry[] = [];
 let current: AdminHistoryEntry | null = null;
 let selectedIndex: number | null = null;
 let markers: maplibregl.Marker[] = [];
+let undoStack: AdminHistoryEntry["edits"][] = [];
 
 registerPmtiles();
 
@@ -92,6 +93,12 @@ map.once("load", () => {
 });
 window.addEventListener("resize", () => map.resize());
 new ResizeObserver(() => map.resize()).observe($("map"));
+map.on("click", (e) => {
+  if (!current) return;
+  const features = map.queryRenderedFeatures(e.point, { layers: ["trail-line", "trail-casing"] });
+  if (features.length === 0) return;
+  selectNearestVisiblePoint(e.point);
+});
 
 function emptyFc(): GeoJSON.FeatureCollection {
   return { type: "FeatureCollection", features: [] };
@@ -134,12 +141,50 @@ function accuracyClass(accuracy?: number | null): string {
 
 function pointDetails(entry: AdminHistoryEntry, idx: number): string {
   const tel = telemetryFor(entry, idx);
-  const parts = [`Point ${idx + 1}/${entry.breadcrumbs.length}`];
+  const point = effectivePoint(entry, idx);
+  const parts = [`Point ${idx + 1}/${entry.breadcrumbs.length}`, `${point[1].toFixed(6)}, ${point[0].toFixed(6)}`];
   if (tel?.timestamp_ms) parts.push(new Date(tel.timestamp_ms).toISOString());
   if (tel?.accuracy != null) parts.push(`±${Math.round(tel.accuracy)}m`);
   if (tel?.altitude != null) parts.push(`${Math.round(tel.altitude)}m alt`);
   if (tel?.speed != null) parts.push(`${(tel.speed * 3.6).toFixed(1)} km/h`);
+  if (entry.edits.hidden_indices.includes(idx)) parts.push("hidden");
+  if (entry.edits.moved_points[String(idx)]) parts.push("moved");
   return parts.join(" · ");
+}
+
+function cloneEdits(entry: AdminHistoryEntry): AdminHistoryEntry["edits"] {
+  return {
+    hidden_indices: [...entry.edits.hidden_indices],
+    moved_points: Object.fromEntries(Object.entries(entry.edits.moved_points).map(([k, v]) => [k, [...v] as LonLat])),
+    updated_at: entry.edits.updated_at,
+    updated_by: entry.edits.updated_by,
+  };
+}
+
+function pushUndo() {
+  if (current) undoStack.push(cloneEdits(current));
+}
+
+function undoEdit() {
+  if (!current) return;
+  const previous = undoStack.pop();
+  if (!previous) {
+    $("status").textContent = "No local edits to undo";
+    return;
+  }
+  current.edits = previous;
+  selectedIndex = null;
+  $("status").textContent = `Undid local edit (${undoStack.length} undo step${undoStack.length === 1 ? "" : "s"} left)`;
+  renderMap();
+}
+
+function selectPoint(idx: number) {
+  if (!current) return;
+  selectedIndex = idx;
+  ($("range-start") as HTMLInputElement).value = String(idx + 1);
+  ($("range-end") as HTMLInputElement).value = String(idx + 1);
+  $("status").textContent = pointDetails(current, idx);
+  renderMap();
 }
 
 async function load() {
@@ -163,6 +208,7 @@ function renderList() {
 function selectEntry(id: number) {
   current = entries.find((e) => e.id === id) ?? null;
   selectedIndex = null;
+  undoStack = [];
   if (!current) return;
   ($("name") as HTMLInputElement).value = current.session_id || "";
   $("toggle-hide").textContent = current.hidden ? "Unhide entry" : "Hide entry";
@@ -191,20 +237,38 @@ function renderMap({ fit = false } = {}) {
     el.title = pointDetails(current, idx);
     el.onclick = (ev) => {
       ev.stopPropagation();
-      selectedIndex = idx;
-      if (current) $("status").textContent = pointDetails(current, idx);
-      renderMap();
+      selectPoint(idx);
     };
     marker.on("dragend", () => {
       if (!current) return;
+      pushUndo();
       const ll = marker.getLngLat();
       current.edits.moved_points[String(idx)] = [ll.lng, ll.lat];
-      renderMap();
+      selectPoint(idx);
     });
     markers.push(marker);
   });
 
   if (fit && coords.length) fitTrail(coords);
+}
+
+function selectNearestVisiblePoint(point: { x: number; y: number }) {
+  if (!current) return;
+  const visible = editedPoints(current);
+  if (!visible.length) return;
+  let best = visible[0][0];
+  let bestDist = Number.POSITIVE_INFINITY;
+  for (const [idx, coord] of visible) {
+    const projected = map.project(coord);
+    const dx = projected.x - point.x;
+    const dy = projected.y - point.y;
+    const dist = Math.hypot(dx, dy);
+    if (dist < bestDist) {
+      bestDist = dist;
+      best = idx;
+    }
+  }
+  if (bestDist <= 48) selectPoint(best);
 }
 
 function fitTrail(coords: LonLat[]) {
@@ -286,6 +350,7 @@ $("hide-point").onclick = () => {
   if (!current) return;
   const idx = selectedPointIndex();
   if (idx == null) return;
+  pushUndo();
   if (!current.edits.hidden_indices.includes(idx)) current.edits.hidden_indices.push(idx);
   renderMap();
 };
@@ -293,6 +358,7 @@ $("unhide-point").onclick = () => {
   if (!current) return;
   const idx = selectedPointIndex();
   if (idx == null) return;
+  pushUndo();
   current.edits.hidden_indices = current.edits.hidden_indices.filter((i) => i !== idx);
   renderMap();
 };
@@ -300,11 +366,33 @@ $("reset-point").onclick = () => {
   if (!current) return;
   const idx = selectedPointIndex();
   if (idx == null) return;
+  pushUndo();
   delete current.edits.moved_points[String(idx)];
   renderMap();
 };
+$("hide-range").onclick = () => {
+  if (!current) return;
+  const start = Number.parseInt(($("range-start") as HTMLInputElement).value, 10);
+  const end = Number.parseInt(($("range-end") as HTMLInputElement).value, 10);
+  if (!Number.isInteger(start) || !Number.isInteger(end)) {
+    alert("Enter a start and end point number");
+    return;
+  }
+  const lo = Math.max(1, Math.min(start, end));
+  const hi = Math.min(current.breadcrumbs.length, Math.max(start, end));
+  if (lo > hi) return;
+  pushUndo();
+  const hidden = new Set(current.edits.hidden_indices);
+  for (let pointNo = lo; pointNo <= hi; pointNo++) hidden.add(pointNo - 1);
+  current.edits.hidden_indices = [...hidden].sort((a, b) => a - b);
+  selectedIndex = null;
+  $("status").textContent = `Marked points ${lo}–${hi} hidden`;
+  renderMap();
+};
+$("undo-edit").onclick = undoEdit;
 $("discard-edits").onclick = () => {
   if (!current || !confirm("Discard all saved GPS edits for this entry? Original breadcrumbs will be restored.")) return;
+  pushUndo();
   current.edits = { hidden_indices: [], moved_points: {} };
   selectedIndex = null;
   renderMap();
@@ -320,6 +408,7 @@ $("hide-low-accuracy").onclick = () => {
     .map((tel, idx) => ({ idx, accuracy: tel.accuracy }))
     .filter(({ accuracy }) => accuracy != null && accuracy > threshold)
     .map(({ idx }) => idx);
+  pushUndo();
   const hidden = new Set(current.edits.hidden_indices);
   toHide.forEach((idx) => hidden.add(idx));
   current.edits.hidden_indices = [...hidden].sort((a, b) => a - b);
@@ -330,7 +419,36 @@ $("save-edits").onclick = async () => {
   if (!current) return;
   current.edits.hidden_indices.sort((a, b) => a - b);
   await api<string>(`/api/admin/history/${current.id}/edits`, { method: "PUT", body: JSON.stringify(current.edits) });
+  undoStack = [];
   $("status").textContent = "Saved GPS edits";
   current.edited_breadcrumbs = editedPoints(current).map(([, p]) => p);
   renderList();
 };
+
+function isTypingTarget(target: EventTarget | null): boolean {
+  const el = target as HTMLElement | null;
+  if (!el) return false;
+  return ["INPUT", "TEXTAREA", "SELECT"].includes(el.tagName) || el.isContentEditable;
+}
+
+document.addEventListener("keydown", (ev) => {
+  if ((ev.metaKey || ev.ctrlKey) && ev.key.toLowerCase() === "s") {
+    ev.preventDefault();
+    ($("save-edits") as HTMLButtonElement).click();
+    return;
+  }
+  if ((ev.metaKey || ev.ctrlKey) && ev.key.toLowerCase() === "z") {
+    ev.preventDefault();
+    undoEdit();
+    return;
+  }
+  if (isTypingTarget(ev.target)) return;
+  if (ev.key === "Delete" || ev.key === "Backspace") {
+    ev.preventDefault();
+    ($("hide-point") as HTMLButtonElement).click();
+  } else if (ev.key === "Escape") {
+    selectedIndex = null;
+    ($("status") as HTMLElement).textContent = current ? "Deselected point" : "No entry selected";
+    renderMap();
+  }
+});
