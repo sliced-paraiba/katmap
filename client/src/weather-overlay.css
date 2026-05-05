@@ -75,3 +75,15 @@ html, body {
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
 }
+
+#weather-wind:not(:empty)::after {
+  content: "·";
+  margin-left: 6px;
+  color: #64748b;
+}
+
+#weather-time {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+  color: #cbd5e1;
+}

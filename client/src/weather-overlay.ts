@@ -19,6 +19,7 @@ const tempEl = document.getElementById("weather-temp")!;
 const feelsEl = document.getElementById("weather-feels")!;
 const locationEl = document.getElementById("weather-location")!;
 const windEl = document.getElementById("weather-wind")!;
+const timeEl = document.getElementById("weather-time")!;
 
 // ── State ──────────────────────────────────────────────────────────────
 
@@ -30,6 +31,8 @@ let lastLat: number | null = null;
 let lastLon: number | null = null;
 let fetching = false;
 let refreshTimer: ReturnType<typeof setInterval> | null = null;
+let utcOffsetSeconds: number | null = null;
+let clockTimer: ReturnType<typeof setInterval> | null = null;
 
 // ── WebSocket ──────────────────────────────────────────────────────────
 
@@ -140,6 +143,7 @@ async function fetchWeather(lat: number, lon: number) {
     const resp = await fetch(url);
     if (!resp.ok) return;
     const data = await resp.json() as {
+      utc_offset_seconds?: number;
       current?: {
         temperature_2m?: number;
         apparent_temperature?: number;
@@ -151,6 +155,12 @@ async function fetchWeather(lat: number, lon: number) {
 
     const c = data.current;
     if (!c || c.temperature_2m == null || c.weather_code == null) return;
+
+    // Store UTC offset for local clock
+    if (data.utc_offset_seconds != null) {
+      utcOffsetSeconds = data.utc_offset_seconds;
+      startClock();
+    }
 
     const weather: CurrentWeather = {
       temperature: c.temperature_2m,
@@ -197,6 +207,26 @@ function render(data: CurrentWeather) {
       fetchWeather(lastLat, lastLon);
     }
   }, 10 * 60 * 1000);
+}
+
+// ── Local clock ───────────────────────────────────────────────────────
+
+function startClock() {
+  if (clockTimer) return; // already running
+  const tick = () => {
+    if (utcOffsetSeconds == null) return;
+    const now = new Date();
+    const utcMs = now.getTime() + now.getTimezoneOffset() * 60_000;
+    const localMs = utcMs + utcOffsetSeconds * 1000;
+    const local = new Date(localMs);
+    const h = local.getHours();
+    const m = String(local.getMinutes()).padStart(2, "0");
+    const ampm = h >= 12 ? "PM" : "AM";
+    const h12 = h % 12 || 12;
+    timeEl.textContent = `${h12}:${m} ${ampm}`;
+  };
+  tick();
+  clockTimer = setInterval(tick, 10_000); // update every 10s is plenty
 }
 
 // ── Start ──────────────────────────────────────────────────────────────
