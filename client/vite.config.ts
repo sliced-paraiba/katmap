@@ -9,7 +9,7 @@ export default defineConfig({
     rollupOptions: {
       input: {
         main: resolve(__dirname, "index.html"),
-        overlay: resolve(__dirname, "overlay.html"),
+        overlay: resolve(__dirname, "overlays/map.html"),
         adminHistory: resolve(__dirname, "admin-history.html"),
         snipe: resolve(__dirname, "snipe.html"),
         debugLocationPushes: resolve(__dirname, "debug-location-pushes.html"),
