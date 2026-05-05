@@ -13,13 +13,13 @@ export interface WeatherData {
   isDay: boolean;
 }
 
-/** WMO weather code → single emoji. */
-export function wmoEmoji(code: number, _isDay: boolean): string {
+/** WMO weather code → single emoji. Night-aware for clear/cloudy. */
+export function wmoEmoji(code: number, isDay: boolean): string {
   switch (code) {
-    case 0:  return "\u2600\uFE0F";  // Clear sky ☀️
-    case 1:  return "\uD83C\uDF24";  // Mainly clear 🌤
-    case 2:  return "\u26C5";        // Partly cloudy ⛅
-    case 3:  return "\u2601\uFE0F";  // Overcast ☁️
+    case 0:  return isDay ? "\u2600\uFE0F" : "\uD83C\uDF19";  // ☀️ / 🌙
+    case 1:  return isDay ? "\uD83C\uDF24" : "\uD83C\uDF19";  // 🌤 / 🌙
+    case 2:  return "\u26C5";        // ⛅
+    case 3:  return "\u2601\uFE0F";  // ☁️
     case 45:
     case 48: return "\uD83C\uDF2B";  // Fog 🌫
     case 51:

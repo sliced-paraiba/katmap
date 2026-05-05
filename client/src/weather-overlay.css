@@ -15,9 +15,9 @@ html, body {
 
 #weather-overlay {
   display: none;
-  align-items: center;
-  gap: 6px;
-  padding: 5px 12px;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 12px 5px;
   background: rgba(2, 6, 23, 0.7);
   backdrop-filter: blur(10px);
   border: 1px solid rgba(255, 255, 255, 0.12);
@@ -28,14 +28,50 @@ html, body {
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
 }
 
+.weather-top-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.weather-primary {
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+}
+
 #weather-icon {
-  font-size: 20px;
+  font-size: 22px;
   line-height: 1;
 }
 
 #weather-temp {
-  font-size: 15px;
-  font-weight: 650;
-  letter-spacing: 0.02em;
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  font-variant-numeric: tabular-nums;
+}
+
+#weather-feels {
+  font-size: 12px;
+  font-weight: 500;
+  color: #94a3b8;
+  font-variant-numeric: tabular-nums;
+}
+
+.weather-bottom-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: #94a3b8;
+}
+
+#weather-location {
+  white-space: nowrap;
+}
+
+#weather-wind {
+  white-space: nowrap;
   font-variant-numeric: tabular-nums;
 }
