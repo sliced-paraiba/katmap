@@ -84,6 +84,16 @@ function handleMessage(msg: ServerMessage) {
   fetchWeather(lat, lon);
 }
 
+// ── Unit conversions ──────────────────────────────────────────────────
+
+function cToF(c: number): number {
+  return c * 9 / 5 + 32;
+}
+
+function kmhToMph(kmh: number): number {
+  return kmh * 0.621371;
+}
+
 // ── Reverse geocode (Nominatim, free, 1 req/s) ────────────────────────
 
 const countryCodes: Record<string, string> = {
@@ -168,9 +178,9 @@ async function fetchWeather(lat: number, lon: number) {
 function render(data: CurrentWeather) {
   const emoji = wmoEmoji(data.weatherCode, data.isDay);
   const desc = wmoDescription(data.weatherCode);
-  const temp = `${Math.round(data.temperature)}°`;
-  const feelsLike = Math.round(data.apparentTemperature);
-  const wind = `${Math.round(data.windSpeed)} km/h`;
+  const temp = `${Math.round(cToF(data.temperature))}°`;
+  const feelsLike = Math.round(cToF(data.apparentTemperature));
+  const wind = `${Math.round(kmhToMph(data.windSpeed))} mph`;
 
   iconEl.textContent = emoji;
   tempEl.textContent = temp;
