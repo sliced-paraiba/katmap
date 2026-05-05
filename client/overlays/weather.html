@@ -8,18 +8,18 @@
   </head>
   <body>
     <div id="weather-overlay">
-      <div class="weather-top-row">
-        <span id="weather-icon"></span>
-        <div class="weather-primary">
-          <span id="weather-temp"></span>
-          <span class="weather-feels" id="weather-feels"></span>
-        </div>
-      </div>
-      <div class="weather-bottom-row">
+      <div class="weather-left">
         <span id="weather-location"></span>
         <span id="weather-time"></span>
-        <span class="weather-sep">·</span>
-        <span id="weather-wind"></span>
+      </div>
+      <div class="weather-divider"></div>
+      <div class="weather-right">
+        <div class="weather-temp-row">
+          <span id="weather-icon"></span>
+          <span id="weather-temp"></span>
+        </div>
+        <span class="weather-detail" id="weather-feels"></span>
+        <span class="weather-detail" id="weather-wind"></span>
       </div>
     </div>
     <script type="module" src="/src/weather-overlay.ts"></script>

@@ -15,9 +15,9 @@ html, body {
 
 #weather-overlay {
   display: none;
-  flex-direction: column;
-  gap: 2px;
-  padding: 6px 12px 5px;
+  align-items: center;
+  gap: 14px;
+  padding: 8px 16px;
   background: rgba(2, 6, 23, 0.7);
   backdrop-filter: blur(10px);
   border: 1px solid rgba(255, 255, 255, 0.12);
@@ -28,20 +28,54 @@ html, body {
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
 }
 
-.weather-top-row {
+/* ── Left: location + time ─────────────────────────────────────────── */
+
+.weather-left {
   display: flex;
-  align-items: center;
-  gap: 6px;
+  flex-direction: column;
+  gap: 1px;
 }
 
-.weather-primary {
+#weather-location {
+  font-size: 15px;
+  font-weight: 650;
+  white-space: nowrap;
+}
+
+#weather-time {
+  font-size: 13px;
+  font-weight: 500;
+  color: #94a3b8;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* ── Divider ────────────────────────────────────────────────────────── */
+
+.weather-divider {
+  width: 1px;
+  align-self: stretch;
+  background: rgba(255, 255, 255, 0.15);
+  margin: 2px 0;
+}
+
+/* ── Right: weather data ────────────────────────────────────────────── */
+
+.weather-right {
   display: flex;
-  align-items: baseline;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 1px;
+}
+
+.weather-temp-row {
+  display: flex;
+  align-items: center;
   gap: 5px;
 }
 
 #weather-icon {
-  font-size: 22px;
+  font-size: 20px;
   line-height: 1;
 }
 
@@ -52,35 +86,9 @@ html, body {
   font-variant-numeric: tabular-nums;
 }
 
-#weather-feels {
-  font-size: 12px;
-  font-weight: 500;
-  color: #94a3b8;
-  font-variant-numeric: tabular-nums;
-}
-
-.weather-bottom-row {
-  display: flex;
-  align-items: center;
-  gap: 6px;
+.weather-detail {
   font-size: 11px;
   color: #94a3b8;
-}
-
-#weather-location {
-  white-space: nowrap;
-}
-
-#weather-time {
-  white-space: nowrap;
-  font-variant-numeric: tabular-nums;
-}
-
-.weather-sep {
-  color: #64748b;
-}
-
-#weather-wind {
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
 }
