@@ -13,6 +13,7 @@ export default defineConfig({
         adminHistory: resolve(__dirname, "admin-history.html"),
         snipe: resolve(__dirname, "snipe.html"),
         debugLocationPushes: resolve(__dirname, "debug-location-pushes.html"),
+        weather: resolve(__dirname, "overlays/weather.html"),
       },
     },
   },
