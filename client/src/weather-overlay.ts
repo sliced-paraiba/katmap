@@ -19,6 +19,10 @@ const tempEl = document.getElementById("weather-temp")!;
 
 // ── State ──────────────────────────────────────────────────────────────
 
+/** Default location when no one is live (Seattle downtown). */
+const FALLBACK_LAT = 47.6062;
+const FALLBACK_LON = -122.3321;
+
 let lastLat: number | null = null;
 let lastLon: number | null = null;
 let fetching = false;
@@ -36,6 +40,10 @@ function connect() {
   ws.onopen = () => {
     console.log("[weather] connected");
     reconnectDelay = 1000;
+    // Fetch fallback weather immediately in case no one is live
+    if (lastLat === null) {
+      fetchWeather(FALLBACK_LAT, FALLBACK_LON);
+    }
   };
 
   ws.onmessage = (e) => {

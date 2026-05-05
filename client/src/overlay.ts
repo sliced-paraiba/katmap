@@ -18,6 +18,10 @@ const showTelemetry = params.get("telemetry") !== "0";
 const staleAfterMs = Number.parseInt(params.get("staleMs") ?? "30000", 10);
 const themeParam = (params.get("theme") ?? "dark") as Theme;
 
+/** Default location when no one is live (Seattle downtown). */
+const FALLBACK_LAT = 47.6062;
+const FALLBACK_LON = -122.3321;
+
 // ── WebSocket ──────────────────────────────────────────────────────────
 
 let ws: WebSocket;
@@ -56,7 +60,7 @@ registerPmtiles();
 const map = new maplibregl.Map({
   container: "map",
   style: RASTER_STYLE,
-  center: [0, 0],
+  center: [FALLBACK_LON, FALLBACK_LAT],
   zoom,
   interactive: false,
   attributionControl: false,
