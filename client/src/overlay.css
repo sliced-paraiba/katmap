@@ -65,10 +65,15 @@ html, body {
   border: 1px solid rgba(226, 232, 240, 0.25);
 }
 
-.status-live {
+.status-badge.status-live {
   background: rgba(20, 184, 166, 0.25);
   color: #99f6e4;
   border-color: rgba(45, 212, 191, 0.45);
+}
+
+/* Hide the badge when it has no text (live state) */
+.status-badge.status-live:empty {
+  display: none;
 }
 
 .status-stale {
@@ -131,9 +136,15 @@ html, body {
   background: radial-gradient(circle at 35% 35%, #fef3c7 0 18%, #fb923c 19% 48%, #dc2626 49% 100%);
   border: 3px solid #fff;
   box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.32), 0 0 14px rgba(0, 0, 0, 0.75);
+  transition: width 0.5s ease, height 0.5s ease, opacity 0.5s ease, border-width 0.3s ease;
+}
+
+.streamer-dot.accuracy-low {
+  background: radial-gradient(circle at 35% 35%, rgba(254,243,199,0.5) 0 18%, rgba(251,146,60,0.5) 19% 48%, rgba(220,38,38,0.5) 49% 100%);
+  border-color: rgba(255, 255, 255, 0.6);
 }
 
 #overlay.offline .streamer-dot,
 #overlay.stale .streamer-dot {
-  opacity: 0.55;
+  opacity: 0.55 !important;
 }

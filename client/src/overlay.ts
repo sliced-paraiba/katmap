@@ -176,11 +176,46 @@ map.on("style.load", () => {
 
 // ── Streamer marker ───────────────────────────────────────────────────
 
+/** Accuracy thresholds for dot sizing (in metres) */
+const ACCURACY_MIN = 5;     // best — smallest dot
+const ACCURACY_MAX = 100;   // worst — largest dot
+const ACCURACY_OPAQUE = 50; // below this → solid; above → fades to transparent
+
 const dot = document.createElement("div");
 dot.className = "streamer-dot";
 const streamerMarker = new maplibregl.Marker({ element: dot })
   .setLngLat([0, 0])
   .addTo(map);
+
+function applyAccuracyStyle(accuracy: number | null | undefined) {
+  if (accuracy == null || !Number.isFinite(accuracy)) {
+    // Unknown accuracy → default solid dot
+    dot.style.width = "20px";
+    dot.style.height = "20px";
+    dot.style.opacity = "1";
+    dot.style.setProperty("--dot-transparent", "0");
+    return;
+  }
+
+  // Clamp accuracy to our range
+  const clamped = Math.max(ACCURACY_MIN, Math.min(ACCURACY_MAX, accuracy));
+
+  // Map accuracy to dot size: 20px (best) → 44px (worst)
+  const t = (clamped - ACCURACY_MIN) / (ACCURACY_MAX - ACCURACY_MIN);
+  const size = Math.round(20 + t * 24);
+  dot.style.width = `${size}px`;
+  dot.style.height = `${size}px`;
+
+  // Opacity / transparency above threshold
+  if (accuracy > ACCURACY_OPAQUE) {
+    const opacityT = Math.min(1, (accuracy - ACCURACY_OPAQUE) / (ACCURACY_MAX - ACCURACY_OPAQUE));
+    dot.style.opacity = String(1 - opacityT * 0.55); // fades to ~0.45 at worst
+    dot.classList.add("accuracy-low");
+  } else {
+    dot.style.opacity = "1";
+    dot.classList.remove("accuracy-low");
+  }
+}
 
 // ── Telemetry DOM ─────────────────────────────────────────────────────
 
@@ -202,8 +237,10 @@ function handleMessage(msg: ServerMessage) {
       lastLocationAt = Date.now();
       const previousTimestampMs = lastLocationTimestampMs;
       lastLocationTimestampMs = msg.timestamp_ms;
-      lastLiveStatus = true;
-      setOverlayStatus("live", strings.overlay.liveGps);
+      // Remove any stale/offline class when live data arrives
+      overlayEl.classList.remove("stale", "offline");
+      statusBadge.className = "status-badge status-live";
+      statusBadge.textContent = ""; // Hide badge when live
 
       const nextPosition: [number, number] = [msg.lon, msg.lat];
       const previousPosition = targetPosition ?? currentPosition;
@@ -226,6 +263,9 @@ function handleMessage(msg: ServerMessage) {
       } else {
         headingArrow.classList.add("heading-unknown");
       }
+
+      // Update dot sizing based on reported accuracy
+      applyAccuracyStyle(finiteNumber(msg.accuracy));
 
       const speedMps = finiteNumber(msg.speed)
         ?? estimateSpeedMps(previousPosition, nextPosition, previousTimestampMs, msg.timestamp_ms);
@@ -255,7 +295,9 @@ function handleMessage(msg: ServerMessage) {
 
     case "live_status": {
       lastLiveStatus = msg.live;
-      if (!msg.live) setOverlayStatus("offline", strings.overlay.offline);
+      if (!msg.live) {
+        setOverlayStatus("offline", strings.overlay.offline);
+      }
       break;
     }
   }
@@ -370,8 +412,11 @@ setInterval(() => {
   const age = Date.now() - lastLocationAt;
   if (age > staleAfterMs) {
     setOverlayStatus("stale", strings.overlay.staleGps(Math.round(age / 1000)));
-  } else if (lastLocationTimestampMs) {
-    setOverlayStatus("live", strings.overlay.liveGps);
+  } else {
+    // GPS is live and fresh — hide the status badge
+    overlayEl.classList.remove("stale", "offline");
+    statusBadge.className = "status-badge status-live";
+    statusBadge.textContent = "";
   }
 }, 1000);
 
