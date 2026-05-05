@@ -41,6 +41,10 @@ nix-shell shell.nix --command "cd client && npm run build"
 nix-shell shell.nix --command "cd server && cargo build --release"
 ```
 
+## Deploy
+
+See DEPLOY.md if it exists. If it doesn't, you aren't on a system with the credentials to deploy.
+
 ## Theme System (Three-File Checklist)
 
 Adding a new map theme requires updating **three files in lockstep**. Missing any one will cause bugs.

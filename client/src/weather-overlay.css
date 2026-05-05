@@ -71,19 +71,16 @@ html, body {
   white-space: nowrap;
 }
 
-#weather-wind {
-  white-space: nowrap;
-  font-variant-numeric: tabular-nums;
-}
-
-#weather-wind:not(:empty)::after {
-  content: "·";
-  margin-left: 6px;
-  color: #64748b;
-}
-
 #weather-time {
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
-  color: #cbd5e1;
+}
+
+.weather-sep {
+  color: #64748b;
+}
+
+#weather-wind {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
 }

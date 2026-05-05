@@ -216,7 +216,7 @@ function startClock() {
   const tick = () => {
     if (utcOffsetSeconds == null) return;
     const now = new Date();
-    const utcMs = now.getTime() + now.getTimezoneOffset() * 60_000;
+    const utcMs = now.getTime();
     const localMs = utcMs + utcOffsetSeconds * 1000;
     const local = new Date(localMs);
     const h = local.getHours();
