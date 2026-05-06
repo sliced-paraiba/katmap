@@ -782,7 +782,9 @@ export class MapView {
   }
 
   private updateRouteLine() {
-    const route = this.state.route;
+    // Prefer the live route when present: streamer -> first active waypoint -> ...
+    // Fall back to the static waypoint-to-waypoint route when no live position exists.
+    const route = this.state.liveRoute ?? this.state.route;
     if (!this.map.getSource("route")) return;
 
     const source = this.map.getSource("route") as maplibregl.GeoJSONSource;

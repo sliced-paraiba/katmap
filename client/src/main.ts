@@ -131,31 +131,57 @@ document.addEventListener("keydown", (e) => {
   }
 });
 
-// Auto-recalculate route when waypoints change
+// Auto-recalculate route when waypoints change.
+// Prefer live routing whenever we know the streamer's position, so the visible
+// route is streamer -> first active waypoint -> second active waypoint -> ...
 let lastWaypointJson = "";
+const LIVE_ROUTE_INTERVAL = 30_000;
+let lastLiveRouteAt = 0;
+let hadLiveRouteInputs = false;
+let clearingRouteForWaypointChange = false;
+
+const activeWaypoints = () => state.waypoints.filter((w) => w.active !== false);
+const canLiveRoute = () => state.live && state.location !== null && activeWaypoints().length >= 1;
+
+function requestBestRoute() {
+  if (canLiveRoute()) {
+    lastLiveRouteAt = Date.now();
+    send({ type: "request_live_route" });
+    return;
+  }
+
+  if (activeWaypoints().length >= 2) {
+    send({ type: "request_route" });
+  }
+}
 
 state.subscribe(() => {
   const wpJson = JSON.stringify(state.waypoints.map((w) => [w.id, w.lat, w.lon, w.active !== false]));
   if (wpJson === lastWaypointJson) return;
   lastWaypointJson = wpJson;
 
-  // Clear stale routes immediately
+  // Clear stale routes immediately, then ask for either live or fallback static routing.
+  clearingRouteForWaypointChange = true;
   state.clearRoute();
-
-  if (state.waypoints.filter((w) => w.active !== false).length >= 2) {
-    send({ type: "request_route" });
-  }
+  clearingRouteForWaypointChange = false;
+  requestBestRoute();
 });
 
-// Throttled live route requests: recalculate from streamer's position every 30s
-const LIVE_ROUTE_INTERVAL = 30_000;
-let lastLiveRouteAt = 0;
-
+// Throttled live route requests: recalculate from streamer's position every 30s.
+// This keeps the route origin moving between waypoint edits.
 state.subscribe(() => {
-  if (!state.location || !state.live || state.waypoints.some((w) => w.active !== false) === false) return;
+  if (clearingRouteForWaypointChange) return;
+
+  const hasInputs = canLiveRoute();
+  if (!hasInputs) {
+    hadLiveRouteInputs = false;
+    return;
+  }
 
   const now = Date.now();
-  if (now - lastLiveRouteAt < LIVE_ROUTE_INTERVAL) return;
+  const becameAvailable = !hadLiveRouteInputs;
+  hadLiveRouteInputs = true;
+  if (!becameAvailable && now - lastLiveRouteAt < LIVE_ROUTE_INTERVAL) return;
   lastLiveRouteAt = now;
 
   send({ type: "request_live_route" });

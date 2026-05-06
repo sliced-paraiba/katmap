@@ -718,10 +718,12 @@ export class Sidebar {
   private renderRouteInfo() {
     const route = this.state.route;
     const live = this.state.liveRoute;
+    const displayRoute = live ?? route;
     const units = this.state.units;
+    const activeWaypointCount = this.state.waypoints.filter((w) => w.active !== false).length;
 
-    if (!route) {
-      if (this.state.waypoints.length >= 2) {
+    if (!displayRoute) {
+      if (activeWaypointCount >= 2 || (this.state.live && this.state.location && activeWaypointCount >= 1)) {
         this.routeInfoEl.innerHTML = `<div class="route-calculating">${strings.route.calculating}</div>`;
       } else {
         this.routeInfoEl.innerHTML = "";
@@ -731,14 +733,15 @@ export class Sidebar {
 
     let html = `
       <div class="route-summary">
-        ${formatRouteSummary(route.distance_km, route.duration_min, units.distance)}
+        ${formatRouteSummary(displayRoute.distance_km, displayRoute.duration_min, units.distance)}
       </div>
     `;
 
-    // Live ETA section — shown when we have a live route result
+    // Live ETA section — shown when we have a live route result. If a static route
+    // is also available, compare against it; otherwise just show live remaining stats.
     if (live) {
-      const saved = route.duration_min - live.duration_min;
-      const savedPct = route.distance_km > 0
+      const saved = route ? route.duration_min - live.duration_min : 0;
+      const savedPct = route && route.distance_km > 0
         ? Math.round((1 - live.distance_km / route.distance_km) * 100)
         : 0;
       html += `
@@ -761,12 +764,10 @@ export class Sidebar {
 
     html += `<div class="maneuver-list">`;
 
-    // Show live route legs if available (from current position), otherwise static route
-    const legsToShow = live ? live.legs : route.legs;
-    for (let legIdx = 0; legIdx < legsToShow.length; legIdx++) {
-      const leg = legsToShow[legIdx];
+    for (let legIdx = 0; legIdx < displayRoute.legs.length; legIdx++) {
+      const leg = displayRoute.legs[legIdx];
 
-      if (legsToShow.length > 1) {
+      if (displayRoute.legs.length > 1) {
         html += `<div class="leg-divider">${formatLegDivider(legIdx + 1, leg.distance_km, units.distance)}</div>`;
       }
 
