@@ -84,18 +84,22 @@ The `polyline` in `route_result` is Valhalla's **precision-6** encoded polyline 
 ### `main.rs` — Entry Point
 
 Sets up tracing, reads environment variables, creates the shared `AppState`, spawns the stale-session detector, and starts the Axum HTTP server. The server serves:
-- `/ws` — WebSocket endpoint
+- `/ws` — WebSocket endpoint (append `?client=overlay` to opt out of viewer counting)
 - `/api/config` — Server configuration (display name, social links)
 - `/api/avatar` — Local avatar image loaded from `AVATAR_PATH`
+- `/api/version` — Compile-time version metadata
+- `/api/health` — Server health status
+- `/api/debug/location-pushes` — Recent companion location pushes snapshot
 - `/api/location` — Companion app location push (POST, requires API key)
 - `/api/location/status` — Current trail status (GET)
 - `/api/history` — Public stream history list (GET; applies non-destructive GPS edits)
+- `/api/poi` — POI lookup via Overpass API (cached, 1h TTL)
 - `/admin/history` — Redirects to the Vite-built `admin-history.html` history editor
-- `/api/admin/history*` — Authenticated history editor and maintenance APIs
+- `/api/admin/history*` — Authenticated history editor and maintenance APIs (list, PATCH, DELETE, PUT edits)
 - `/snipe` — Redirects to the Vite-built `snipe.html` stream-sniping page
-- `/api/snipe/*` — Authenticated stream-sniping GPS route APIs
+- `/api/snipe/*` — Authenticated stream-sniping GPS route APIs (rate-limited)
 - `/resolve-url` — Google Maps short link resolution
-- `/discord` — Redirect to configured Discord invite
+- `/discord` — Redirect to configured Discord invite (404 if not set)
 - Everything else — static files from `../client/dist/` (via `tower_http::services::ServeDir`)
 
 ### `ws.rs` — WebSocket Handler + State
@@ -115,7 +119,13 @@ Sets up tracing, reads environment variables, creates the shared `AppState`, spa
 | `display_name` | `String` | Display name for location broadcasts |
 | `avatar_path` | `String` | Local image served by `/api/avatar` |
 | `social_links` | `SocialLinks` | Configured social media links |
-| `live_location` | `Arc<RwLock<LiveLocation>>` | Latest valid streamer position for live routing/sniping |
+| `live_location` | `Arc<RwLock<LiveLocation>>` | Latest valid streamer position + speed for live routing/sniping |
+| `snipe_route_limiter` | `Arc<SnipeRouteLimiter>` | Rate limiter for snipe route endpoint |
+| `poi_cache` | `Arc<RwLock<PoiCache>>` | POI lookup cache (1h TTL) |
+| `recent_location_pushes` | `Arc<Mutex<VecDeque<...>>>` | Last 200 companion pushes for debug |
+| `auto_complete` | `AutoCompleteConfig` | Auto-complete settings (enabled, radius, dwell) |
+| `auto_complete_candidate` | `Arc<Mutex<Option<...>>>` | Current auto-complete candidate |
+| `walking_speed_kmh` | `f64` | Default pedestrian speed for route estimates |
 
 **Connection lifecycle:**
 
@@ -179,6 +189,7 @@ Handles location pushes from the companion app and trail accumulation.
 - Auto-starts a session on first location push
 - `stale_detector` task runs every 60s — if no location for 15 minutes, saves trail to SQLite and resets
 - `save_on_shutdown` saves any active trail on graceful shutdown (Ctrl+C)
+- On server restart, recovers incomplete trails from the last 15 minutes
 
 **Status endpoint** (`GET /api/location/status`):
 - Returns current session state: active, point count, session name, start time
@@ -253,6 +264,17 @@ Called from `ws.rs` when a `request_route` message is received. It:
 
 Route calculation runs in a spawned task so it doesn't block the WebSocket handler.
 
+### `poi.rs` — POI Lookup
+
+Proxies Overpass API queries for point-of-interest lookup. `GET /api/poi?lat=...&lon=...&name=...` searches within a 30m radius and returns nearby amenities, shops, and tourism POIs with details (hours, phone, website, cuisine, accessibility). Results are cached in-memory for 1 hour.
+
+### `debug.rs` — Debug Endpoints
+
+Provides operational visibility:
+- `GET /api/version` — compile-time git commit + build timestamp
+- `GET /api/health` — current session state (live status, breadcrumb count, last location age, connection count)
+- `GET /api/debug/location-pushes` — snapshot of the last 200 companion location pushes with received timestamps
+
 ### `admin.rs` — History DB CLI
 
 A standalone binary (`katmap-admin`) for SQLite history maintenance. Reads `HISTORY_DB_PATH` env var for the database path. Operations include listing streams, hiding entries, and deleting records.
@@ -262,11 +284,12 @@ A standalone binary (`katmap-admin`) for SQLite history maintenance. Reads `HIST
 ### `main.ts` — Entry Point
 
 Instantiates and wires together all components:
-- Creates `AppState`, `Connection`, `MapView`, `Sidebar`
+- Creates `AppState`, `Connection`, `MapView`, `Sidebar`, `SettingsPopup`
 - Manages theme persistence via `localStorage` (key: `katmap-theme`)
+- Manages unit persistence via `localStorage` (key: `katmap-units`)
 - Handles mobile sidebar toggle (hamburger button, overlay, Escape key)
 - Keyboard shortcut: `Ctrl+Z` / `Cmd+Z` sends `{ type: "undo" }`
-- Auto-route: when waypoints change (compared by serializing `[id, lat, lon]`), clears the stale route and sends `request_route` if >= 2 waypoints
+- Auto-route: when waypoints change (compared by serializing `[id, lat, lon, active]`), clears the stale route and sends `request_route` if >= 2 active waypoints
 - Dynamic favicon: circular `/api/avatar` image, fallback teal "K" circle
 - Toast notification system (error: 5s red, success: 2s green, info: 2s themed)
 
@@ -285,13 +308,14 @@ Manages the WebSocket lifecycle:
 - On message: JSON-parses into `ServerMessage`, calls the `onMessage` callback
 - On close: schedules reconnect with exponential backoff (1s initial, 30s max)
 - **`send(msg)`**: JSON-encodes and sends if the socket is open
+- Overlay connections append `?client=overlay` to opt out of viewer counting
 - On reconnect, the server sends the full waypoint state, so the client is immediately in sync
 
 ### `map.ts` — MapView
 
-Wraps MapLibre GL JS with all map interaction logic:
+Wraps MapLibre GL JS with all map interaction logic. Theme application is delegated to `themes.ts`.
 
-**Themes**: 8 vector tile themes fetched from the tile server (dark-matter, positron, osm-bright, fiord-color, toner, basic, neon-night, midnight-blue) plus a raster fallback using OpenStreetMap tiles. On theme change, the style is fully replaced via `map.setStyle()`, and all custom layers/sources are re-added.
+**Themes**: 8 vector tile themes fetched from the tile server (dark-matter, positron, osm-bright, fiord-color, toner, basic, neon-night, midnight-blue) plus a raster fallback using OpenStreetMap tiles. Theme definitions are centralized in `themes.ts`; selection is handled via `SettingsPopup` in `settings.ts`. On theme change, the style is fully replaced via `map.setStyle()`, and all custom layers/sources are re-added via the `style.load` callback.
 
 **Layers**:
 - Route polyline: GeoJSON `LineString` source, teal color (`#0f9b8e`), decoded from Valhalla precision-6 polyline
@@ -302,8 +326,9 @@ Wraps MapLibre GL JS with all map interaction logic:
 
 **Interactions**:
 - Right-click on map: context menu with "Add waypoint here" (reverse geocoded label via Nominatim), "Open in Google Maps"
-- Right-click on marker: "Set as start", "Set as end", "Open in Google Maps", "Delete node"
+- Right-click on marker: "Set as start", "Set as end", "Mark active/inactive", "Open in Google Maps", "Delete node"
 - Map interaction is disabled while the context menu is open
+- Left-click on empty map area: queries `/api/poi` for nearby points of interest. Shows a popup with details and "Add to route" button
 - Right-click drag rotation is permanently disabled (`dragRotate: false`)
 - Mobile: long-press (500ms) triggers the context menu; tap on markers opens marker context menu
 
@@ -323,8 +348,8 @@ Renders the left panel with:
   - Full Google Maps URLs (coordinates extracted from the `@lat,lon` or `?q=lat,lon` in the URL)
   - Google Maps short links (`maps.app.goo.gl/...`, `goo.gl/maps/...`) — resolved server-side via `/resolve-url`
   - Plus Codes — decoded with the `open-location-code` library; short codes use the streamer's current location as a reference point
-- **Waypoint list**: SortableJS-powered drag-to-reorder list. Each item shows index number, label (click to inline-edit), coordinates, and a remove button.
-- **Route info**: Summary (total distance/duration), then per-leg maneuver lists with icons (44 Valhalla maneuver types mapped to Unicode symbols), instructions, street names, and distances.
+- **Waypoint list**: SortableJS-powered drag-to-reorder list. Each item shows index number, active/inactive toggle, label (click to inline-edit), coordinates, and a remove button.
+- **Route info**: Summary (total distance/duration), then per-leg maneuver lists with icons (44 Valhalla maneuver types mapped to Unicode symbols), instructions, street names, and distances. When the streamer is live, a "Live ETA" section appears showing remaining distance, time, and current speed.
 
 ### `types.ts` — Wire Protocol Types
 

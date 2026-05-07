@@ -40,25 +40,33 @@ The dev client runs at `http://localhost:5173`.
 ```
 katmap/
 ├── server/src/
-│   ├── main.rs          # Axum setup, env vars, static file serving
+│   ├── main.rs          # Axum setup, env vars, route registration, graceful shutdown
 │   ├── types.rs         # Serde message types (ClientMessage/ServerMessage)
-│   ├── ws.rs            # WebSocket handler, AppState, undo stack
+│   ├── ws.rs            # WebSocket handler, AppState, undo stack, live route logic
 │   ├── companion.rs     # Companion app location push, ordered trail accumulation
 │   ├── history.rs       # SQLite history persistence + authenticated web editor APIs
 │   ├── snipe.rs         # Authenticated stream-sniping GPS route API/page
 │   ├── valhalla.rs      # Valhalla route calculation proxy
 │   ├── resolve.rs       # Google Maps short link resolution
+│   ├── poi.rs           # POI lookup via Overpass API (cached)
+│   ├── debug.rs         # Debug endpoints (version, health, location push snapshot)
+│   ├── auth.rs          # Authentication helpers
 │   └── admin.rs         # CLI tool for history DB maintenance
 ├── client/src/
-│   ├── main.ts          # Main app entry point — wires state, net, map, sidebar
+│   ├── main.ts          # Main app entry point — wires state, net, map, sidebar, settings
 │   ├── overlay.ts       # OBS overlay entry point
 │   ├── admin-history.ts # Authenticated history editor entry point
 │   ├── snipe.ts         # Authenticated stream-sniping GPS page entry point
 │   ├── types.ts         # TypeScript message types (mirrors server)
 │   ├── net.ts           # WebSocket client with exponential backoff reconnect
 │   ├── state.ts         # Reactive app state (pub/sub)
-│   ├── map.ts           # MapLibre GL JS — themes, markers, route layer, context menu
+│   ├── map.ts           # MapLibre GL JS — markers, route layer, context menu
 │   ├── sidebar.ts       # Waypoint list, drag-reorder, route maneuvers, history browser
+│   ├── themes.ts        # Theme definitions, fetching, PMTiles registration (shared)
+│   ├── settings.ts      # Settings popup — theme select + unit toggles
+│   ├── strings.ts       # Centralized UI strings
+│   ├── units.ts         # Metric/imperial unit conversion + formatting
+│   ├── geo.ts           # Coordinate types, haversine distance
 │   └── style.css        # Main app styles
 ├── docker-compose.yml   # Valhalla routing engine
 ├── justfile             # Dev/build task runner
@@ -93,6 +101,10 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for a detailed codebase walkthrough.
 | `SOCIAL_DISCORD` | No | Discord URL; also enables `/discord` redirect |
 | `SOCIAL_KICK` | No | Kick profile URL exposed by `/api/config` |
 | `SOCIAL_TWITCH` | No | Twitch profile URL exposed by `/api/config` |
+| `AUTO_COMPLETE_WAYPOINTS` | No | Auto-deactivate waypoints the streamer passes through (default: `true`) |
+| `AUTO_COMPLETE_WAYPOINT_RADIUS_M` | No | Distance threshold for auto-complete (default: `35`) |
+| `AUTO_COMPLETE_WAYPOINT_DWELL_S` | No | Dwell time before auto-complete fires (default: `10`) |
+| `SNIPE_ROUTE_LIMIT_PER_MINUTE` | No | Rate limit for snipe route requests (default: `30`) |
 | `RUST_LOG` | No | Tracing filter (e.g. `info`, `katmap_server=debug`) |
 
 ## Companion App
@@ -106,7 +118,9 @@ Location data comes from a companion app that pushes GPS coordinates to the serv
 - `heading` — direction in degrees (0° = north, clockwise)
 - `speed` — velocity in meters per second
 
-The server accepts location pushes at `POST /api/location` with `Authorization: Bearer <key>`. Sessions auto-start on the first location push and finalize after 15 minutes of inactivity (stale detection). Active trails are also saved on graceful shutdown. Points are sorted by their GPS timestamp, so out-of-order packets rebuild and rebroadcast the trail in chronological order.
+The server accepts location pushes at `POST /api/location` with `Authorization: Bearer <key>`. Sessions auto-start on the first location push and finalize after 15 minutes of inactivity (stale detection). Active trails are also saved on graceful shutdown. On restart, incomplete trails from the last 15 minutes are recovered and resumed. Points are sorted by their GPS timestamp, so out-of-order packets rebuild and rebroadcast the trail in chronological order.
+
+When `AUTO_COMPLETE_WAYPOINTS` is enabled (default), waypoints the streamer passes through are automatically deactivated (set `active: false`). This triggers a route recalculation for the remaining waypoints.
 
 ## Admin / Private Pages
 
@@ -115,12 +129,13 @@ The server accepts location pushes at `POST /api/location` with `Authorization: 
 
 ## Theme System
 
-Adding a new map theme requires updating three files:
+Map themes are centralized in `client/src/themes.ts`. Adding a new theme:
 
-1. **`client/src/map.ts`** — Add the theme name to the `Theme` type and `THEME_FILE` map
-2. **`client/src/main.ts`** — Add to the `VALID_THEMES` array
-3. **`client/index.html`** — Add an `<option>` to the theme `<select>`
+1. Add the short name to the `THEMES` array in `themes.ts`
+2. Add an entry in the `THEME_FILE` map (theme → style JSON filename)
+3. Add a display label in `client/src/strings.ts` under `themes`
 
+Theme selection is handled by `SettingsPopup` in `client/src/settings.ts`.
 Style JSONs must reference the correct PMTiles source, glyph, and sprite URLs for your tile server.
 
 ## License
