@@ -18,6 +18,8 @@ const iconEl = document.getElementById("weather-icon")!;
 const tempEl = document.getElementById("weather-temp")!;
 const feelsEl = document.getElementById("weather-feels")!;
 const locationEl = document.getElementById("weather-location")!;
+const cityEl = document.getElementById("weather-city")!;
+const countryEl = document.getElementById("weather-country")!;
 const windEl = document.getElementById("weather-wind")!;
 const gustEl = document.getElementById("weather-gust")!;
 const timeEl = document.getElementById("weather-time")!;
@@ -106,22 +108,31 @@ const countryCodes: Record<string, string> = {
 
 let geoTimer: ReturnType<typeof setTimeout> | null = null;
 
-async function reverseGeocode(lat: number, lon: number): Promise<string> {
+interface LocationName {
+  city: string;
+  suffix: string;
+  label: string;
+}
+
+async function reverseGeocode(lat: number, lon: number): Promise<LocationName | null> {
   try {
     const url = `https://nominatim.openstreetmap.org/reverse?lat=${lat.toFixed(4)}&lon=${lon.toFixed(4)}&format=json&zoom=10`;
     const resp = await fetch(url, { headers: { "User-Agent": "KatMap-WeatherOverlay/1.0" } });
-    if (!resp.ok) return "";
+    if (!resp.ok) return null;
     const data = await resp.json() as {
       address?: { city?: string; town?: string; village?: string; hamlet?: string; country_code?: string };
     };
     const addr = data.address;
-    if (!addr) return "";
+    if (!addr) return null;
     const city = addr.city ?? addr.town ?? addr.village ?? addr.hamlet ?? "";
     const cc = addr.country_code?.toUpperCase() ?? "";
-    if (!city && !cc) return "";
-    return cc ? `${city}, ${countryCodes[cc] ?? cc}` : city;
+    if (!city && !cc) return null;
+
+    const country = cc ? countryCodes[cc] ?? cc : "";
+    const suffix = country ? `${city ? ", " : ""}${country}` : "";
+    return { city, suffix, label: `${city}${suffix}` };
   } catch {
-    return "";
+    return null;
   }
 }
 
@@ -178,7 +189,11 @@ async function fetchWeather(lat: number, lon: number) {
     if (geoTimer) clearTimeout(geoTimer);
     geoTimer = setTimeout(async () => {
       const loc = await reverseGeocode(lat, lon);
-      if (loc) locationEl.textContent = loc;
+      if (loc) {
+        cityEl.textContent = loc.city || loc.suffix;
+        countryEl.textContent = loc.city ? loc.suffix : "";
+        locationEl.title = loc.label;
+      }
     }, 200);
 
     render(weather);
