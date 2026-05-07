@@ -19,6 +19,7 @@ const tempEl = document.getElementById("weather-temp")!;
 const feelsEl = document.getElementById("weather-feels")!;
 const locationEl = document.getElementById("weather-location")!;
 const windEl = document.getElementById("weather-wind")!;
+const gustEl = document.getElementById("weather-gust")!;
 const timeEl = document.getElementById("weather-time")!;
 
 // ── State ──────────────────────────────────────────────────────────────
@@ -132,6 +133,7 @@ interface CurrentWeather {
   weatherCode: number;
   isDay: boolean;
   windSpeed: number; // km/h
+  windGusts: number | null; // km/h
 }
 
 async function fetchWeather(lat: number, lon: number) {
@@ -139,7 +141,7 @@ async function fetchWeather(lat: number, lon: number) {
   fetching = true;
 
   try {
-    const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat.toFixed(4)}&longitude=${lon.toFixed(4)}&current=temperature_2m,apparent_temperature,weather_code,is_day,wind_speed_10m`;
+    const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat.toFixed(4)}&longitude=${lon.toFixed(4)}&current=temperature_2m,apparent_temperature,weather_code,is_day,wind_speed_10m,wind_gusts_10m`;
     const resp = await fetch(url);
     if (!resp.ok) return;
     const data = await resp.json() as {
@@ -150,6 +152,7 @@ async function fetchWeather(lat: number, lon: number) {
         weather_code?: number;
         is_day?: number;
         wind_speed_10m?: number;
+        wind_gusts_10m?: number;
       };
     };
 
@@ -168,6 +171,7 @@ async function fetchWeather(lat: number, lon: number) {
       weatherCode: c.weather_code,
       isDay: c.is_day !== 0,
       windSpeed: c.wind_speed_10m ?? 0,
+      windGusts: c.wind_gusts_10m ?? null,
     };
 
     // Kick off reverse geocode (rate-limited to ~1/s via debounce)
@@ -188,16 +192,19 @@ async function fetchWeather(lat: number, lon: number) {
 function render(data: CurrentWeather) {
   const emoji = wmoEmoji(data.weatherCode, data.isDay);
   const desc = wmoDescription(data.weatherCode);
-  const temp = `${Math.round(cToF(data.temperature))}°`;
+  const tempF = Math.round(cToF(data.temperature));
+  const temp = `${tempF}°`;
   const feelsLike = Math.round(cToF(data.apparentTemperature));
   const wind = `${Math.round(kmhToMph(data.windSpeed))} mph`;
+  const gusts = data.windGusts == null ? null : `${Math.round(kmhToMph(data.windGusts))} mph`;
 
   iconEl.textContent = emoji;
   tempEl.textContent = temp;
-  feelsEl.textContent = feelsLike !== Math.round(data.temperature) ? `feels ${feelsLike}°` : "";
-  windEl.textContent = wind;
+  feelsEl.textContent = feelsLike !== tempF ? `feels ${feelsLike}°` : "";
+  windEl.textContent = `wind ${wind}`;
+  gustEl.textContent = gusts ? `gust ${gusts}` : "";
 
-  overlayEl.title = `${desc}, ${temp} (feels ${feelsLike}°), ${wind}`;
+  overlayEl.title = `${desc}, ${temp} (feels ${feelsLike}°), wind ${wind}${gusts ? `, gust ${gusts}` : ""}`;
   overlayEl.style.display = "flex";
 
   // Schedule refresh in 10 minutes
