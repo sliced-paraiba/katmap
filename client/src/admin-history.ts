@@ -4,6 +4,7 @@ import "./admin-history.css";
 import { Theme, RASTER_STYLE, applyTheme, isTheme, registerPmtiles } from "./themes";
 import { escapeHtml } from "./html";
 import { bindTokenInput, createTokenApi } from "./api";
+import { emptyFeatureCollection, ensureGeoJsonSource, ensureLayer, lineStringFeature } from "./map-layers";
 import type { AdminHistoryEntry } from "./api-types";
 import type { LonLat } from "./geo";
 import type { BreadcrumbPoint } from "./types";
@@ -32,31 +33,25 @@ const map = new maplibregl.Map({
 map.addControl(new maplibregl.NavigationControl());
 
 function addCustomLayers() {
-  if (!map.getSource("trail")) {
-    map.addSource("trail", { type: "geojson", lineMetrics: true, data: emptyFc() });
-  }
-  if (!map.getLayer("trail-casing")) {
-    map.addLayer({
-      id: "trail-casing",
-      type: "line",
-      source: "trail",
-      layout: { "line-join": "round", "line-cap": "round" },
-      paint: { "line-color": "#111827", "line-width": 7, "line-opacity": 0.45 },
-    });
-  }
-  if (!map.getLayer("trail-line")) {
-    map.addLayer({
-      id: "trail-line",
-      type: "line",
-      source: "trail",
-      layout: { "line-join": "round", "line-cap": "round" },
-      paint: {
-        "line-gradient": ["interpolate", ["linear"], ["line-progress"], 0, "#60a5fa", 0.3, "#3b82f6", 0.6, "#6366f1", 0.85, "#7c3aed", 1, "#581c87"],
-        "line-width": 4,
-        "line-opacity": 0.9,
-      },
-    });
-  }
+  ensureGeoJsonSource(map, "trail", { lineMetrics: true });
+  ensureLayer(map, {
+    id: "trail-casing",
+    type: "line",
+    source: "trail",
+    layout: { "line-join": "round", "line-cap": "round" },
+    paint: { "line-color": "#111827", "line-width": 7, "line-opacity": 0.45 },
+  });
+  ensureLayer(map, {
+    id: "trail-line",
+    type: "line",
+    source: "trail",
+    layout: { "line-join": "round", "line-cap": "round" },
+    paint: {
+      "line-gradient": ["interpolate", ["linear"], ["line-progress"], 0, "#60a5fa", 0.3, "#3b82f6", 0.6, "#6366f1", 0.85, "#7c3aed", 1, "#581c87"],
+      "line-width": 4,
+      "line-opacity": 0.9,
+    },
+  });
 }
 
 map.on("style.load", addCustomLayers);
@@ -100,10 +95,6 @@ map.on("click", (e) => {
   if (features.length === 0) return;
   selectNearestVisiblePoint(e.point);
 });
-
-function emptyFc(): GeoJSON.FeatureCollection {
-  return { type: "FeatureCollection", features: [] };
-}
 
 function fmt(ms: number): string {
   return new Date(ms).toISOString().slice(0, 16).replace("T", " ");
@@ -214,7 +205,7 @@ function renderMap({ fit = false } = {}) {
 
   const visible = editedPoints(current);
   const coords = visible.map(([, p]) => p);
-  source.setData(coords.length >= 2 ? { type: "Feature", properties: {}, geometry: { type: "LineString", coordinates: coords } } : emptyFc());
+  source.setData(coords.length >= 2 ? lineStringFeature(coords) : emptyFeatureCollection());
 
   const hidden = new Set(current.edits.hidden_indices || []);
   current.breadcrumbs.forEach((_, idx) => {

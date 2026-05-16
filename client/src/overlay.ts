@@ -8,6 +8,7 @@ import { warmEndpointFeatureCollection, warmGradientExpression } from "./gradien
 import { haversineMeters } from "./geo";
 import { formatSpeedMs, formatAltitude } from "./units";
 import { Connection } from "./net";
+import { emptyFeatureCollection, ensureGeoJsonSource, ensureLayer, moveLayersToTop, setLineString } from "./map-layers";
 
 // URL params for OBS configurability
 const params = new URLSearchParams(window.location.search);
@@ -50,92 +51,63 @@ let lastLocationTimestampMs: number | null = null;
 let lastLiveStatus: boolean | null = null;
 
 function addCustomLayers() {
-  if (!map.getSource("trail")) {
-    map.addSource("trail", {
-      type: "geojson",
-      lineMetrics: true,
-      data: { type: "FeatureCollection", features: [] },
-    });
-  }
-  if (!map.getLayer("trail-line-casing")) {
-    map.addLayer({
-      id: "trail-line-casing",
-      type: "line",
-      source: "trail",
-      layout: { "line-join": "round", "line-cap": "round" },
-      paint: { "line-color": "#020617", "line-width": 9, "line-opacity": 0.72 },
-    });
-  }
-  if (!map.getLayer("trail-line")) {
-    map.addLayer({
-      id: "trail-line",
-      type: "line",
-      source: "trail",
-      layout: { "line-join": "round", "line-cap": "round" },
-      paint: { "line-gradient": warmGradientExpression(), "line-width": 6, "line-opacity": showTrail ? 0.95 : 0 },
-    });
-  }
+  ensureGeoJsonSource(map, "trail", { lineMetrics: true });
+  ensureLayer(map, {
+    id: "trail-line-casing",
+    type: "line",
+    source: "trail",
+    layout: { "line-join": "round", "line-cap": "round" },
+    paint: { "line-color": "#020617", "line-width": 9, "line-opacity": 0.72 },
+  });
+  ensureLayer(map, {
+    id: "trail-line",
+    type: "line",
+    source: "trail",
+    layout: { "line-join": "round", "line-cap": "round" },
+    paint: { "line-gradient": warmGradientExpression(), "line-width": 6, "line-opacity": showTrail ? 0.95 : 0 },
+  });
 
-  if (!map.getSource("trail-endpoints")) {
-    map.addSource("trail-endpoints", {
-      type: "geojson",
-      data: { type: "FeatureCollection", features: [] },
-    });
-  }
-  if (!map.getLayer("trail-endpoint-halo")) {
-    map.addLayer({
-      id: "trail-endpoint-halo",
-      type: "circle",
-      source: "trail-endpoints",
-      paint: {
-        "circle-color": "#ffffff",
-        "circle-radius": ["case", ["==", ["get", "kind"], "end"], 8, 7],
-        "circle-opacity": 0.9,
-      },
-    });
-  }
-  if (!map.getLayer("trail-endpoint")) {
-    map.addLayer({
-      id: "trail-endpoint",
-      type: "circle",
-      source: "trail-endpoints",
-      paint: {
-        "circle-color": ["get", "color"],
-        "circle-radius": ["case", ["==", ["get", "kind"], "end"], 5, 4],
-        "circle-stroke-color": "#111827",
-        "circle-stroke-width": 1.5,
-      },
-    });
-  }
+  ensureGeoJsonSource(map, "trail-endpoints");
+  ensureLayer(map, {
+    id: "trail-endpoint-halo",
+    type: "circle",
+    source: "trail-endpoints",
+    paint: {
+      "circle-color": "#ffffff",
+      "circle-radius": ["case", ["==", ["get", "kind"], "end"], 8, 7],
+      "circle-opacity": 0.9,
+    },
+  });
+  ensureLayer(map, {
+    id: "trail-endpoint",
+    type: "circle",
+    source: "trail-endpoints",
+    paint: {
+      "circle-color": ["get", "color"],
+      "circle-radius": ["case", ["==", ["get", "kind"], "end"], 5, 4],
+      "circle-stroke-color": "#111827",
+      "circle-stroke-width": 1.5,
+    },
+  });
 
-  if (!map.getSource("route")) {
-    map.addSource("route", {
-      type: "geojson",
-      data: { type: "FeatureCollection", features: [] },
-    });
-  }
-  if (!map.getLayer("route-line-casing")) {
-    map.addLayer({
-      id: "route-line-casing",
-      type: "line",
-      source: "route",
-      layout: { "line-join": "round", "line-cap": "round" },
-      paint: { "line-color": "#020617", "line-width": 10, "line-opacity": showRoute ? 0.75 : 0 },
-    });
-  }
-  if (!map.getLayer("route-line")) {
-    map.addLayer({
-      id: "route-line",
-      type: "line",
-      source: "route",
-      layout: { "line-join": "round", "line-cap": "round" },
-      paint: { "line-color": "#14f1d9", "line-width": 6, "line-opacity": showRoute ? 0.92 : 0 },
-    });
-  }
+  ensureGeoJsonSource(map, "route");
+  ensureLayer(map, {
+    id: "route-line-casing",
+    type: "line",
+    source: "route",
+    layout: { "line-join": "round", "line-cap": "round" },
+    paint: { "line-color": "#020617", "line-width": 10, "line-opacity": showRoute ? 0.75 : 0 },
+  });
+  ensureLayer(map, {
+    id: "route-line",
+    type: "line",
+    source: "route",
+    layout: { "line-join": "round", "line-cap": "round" },
+    paint: { "line-color": "#14f1d9", "line-width": 6, "line-opacity": showRoute ? 0.92 : 0 },
+  });
 
   // Keep trail endpoint dots above the route line so start/end stay visible.
-  if (map.getLayer("trail-endpoint-halo")) map.moveLayer("trail-endpoint-halo");
-  if (map.getLayer("trail-endpoint")) map.moveLayer("trail-endpoint");
+  moveLayersToTop(map, ["trail-endpoint-halo", "trail-endpoint"]);
 }
 
 function reapplyData() {
@@ -278,30 +250,19 @@ function handleMessage(msg: ServerMessage) {
 }
 
 function updateRouteLayer() {
-  const src = map.getSource("route") as maplibregl.GeoJSONSource | undefined;
-  if (!src || !routePolyline) return;
+  if (!routePolyline) return;
   routeCoords = decodePolyline(routePolyline);
-  src.setData({
-    type: "Feature",
-    properties: {},
-    geometry: { type: "LineString", coordinates: routeCoords },
-  });
+  setLineString(map, "route", routeCoords, { minPoints: 1 });
 }
 
 function updateTrailLayer() {
-  const src = map.getSource("trail") as maplibregl.GeoJSONSource | undefined;
   const endpointSrc = map.getSource("trail-endpoints") as maplibregl.GeoJSONSource | undefined;
-  if (!src) return;
   if (trailCoords.length < 2) {
-    src.setData({ type: "FeatureCollection", features: [] });
-    endpointSrc?.setData({ type: "FeatureCollection", features: [] });
+    setLineString(map, "trail", trailCoords);
+    endpointSrc?.setData(emptyFeatureCollection());
     return;
   }
-  src.setData({
-    type: "Feature",
-    properties: {},
-    geometry: { type: "LineString", coordinates: trailCoords },
-  });
+  setLineString(map, "trail", trailCoords);
   endpointSrc?.setData(warmEndpointFeatureCollection(trailCoords));
 }
 

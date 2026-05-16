@@ -8,6 +8,7 @@ import { Theme, RASTER_STYLE, fetchStyle, registerPmtiles } from "./themes";
 import { decodePolyline } from "./polyline";
 import { coldEndpointFeatureCollection, coldGradientExpression, warmEndpointFeatureCollection, warmGradientExpression } from "./gradients";
 import { escapeHtml } from "./html";
+import { emptyFeatureCollection, ensureGeoJsonSource, ensureLayer, moveLayersToTop, setLineString } from "./map-layers";
 
 // Seattle center as ultimate fallback
 const DEFAULT_CENTER: [number, number] = [-122.3321, 47.6062];
@@ -155,7 +156,7 @@ export class MapView {
     // Using style.load (not styledata) so the vector tile layers are already in place
     // and our custom layers end up correctly on top.
     this.map.on("style.load", () => {
-      this.addRouteLayer();
+      this.addCustomLayers();
     });
 
     state.subscribe(() => this.update());
@@ -169,170 +170,124 @@ export class MapView {
     });
   }
 
-  private addRouteLayer() {
-    // Remove any partially-added sources/layers from a previous aborted call
-    // before re-adding, so we don't throw "already exists".
-    if (!this.map.getSource("breadcrumbs")) {
-      this.map.addSource("breadcrumbs", {
-        type: "geojson",
-        lineMetrics: true,
-        data: { type: "FeatureCollection", features: [] },
-      });
-    }
-    if (!this.map.getLayer("breadcrumb-line-casing")) {
-      this.map.addLayer({
-        id: "breadcrumb-line-casing",
-        type: "line",
-        source: "breadcrumbs",
-        layout: { "line-join": "round", "line-cap": "round" },
-        paint: {
-          "line-color": "#111827",
-          "line-width": 7,
-          "line-opacity": 0.45,
-        },
-      });
-    }
-    if (!this.map.getLayer("breadcrumb-line")) {
-      this.map.addLayer({
-        id: "breadcrumb-line",
-        type: "line",
-        source: "breadcrumbs",
-        layout: { "line-join": "round", "line-cap": "round" },
-        paint: {
-          "line-gradient": warmGradientExpression(),
-          "line-width": 4,
-          "line-opacity": 0.95,
-        },
-      });
-    }
-    if (!this.map.getSource("breadcrumb-endpoints")) {
-      this.map.addSource("breadcrumb-endpoints", {
-        type: "geojson",
-        data: { type: "FeatureCollection", features: [] },
-      });
-    }
-    if (!this.map.getLayer("breadcrumb-endpoint-halo")) {
-      this.map.addLayer({
-        id: "breadcrumb-endpoint-halo",
-        type: "circle",
-        source: "breadcrumb-endpoints",
-        paint: {
-          "circle-color": "#ffffff",
-          "circle-radius": ["case", ["==", ["get", "kind"], "end"], 9, 8],
-          "circle-opacity": 0.9,
-        },
-      });
-    }
-    if (!this.map.getLayer("breadcrumb-endpoint")) {
-      this.map.addLayer({
-        id: "breadcrumb-endpoint",
-        type: "circle",
-        source: "breadcrumb-endpoints",
-        paint: {
-          "circle-color": ["get", "color"],
-          "circle-radius": ["case", ["==", ["get", "kind"], "end"], 6, 5],
-          "circle-stroke-color": "#111827",
-          "circle-stroke-width": 1.5,
-        },
-      });
-    }
+  private addCustomLayers() {
+    ensureGeoJsonSource(this.map, "breadcrumbs", { lineMetrics: true });
+    ensureLayer(this.map, {
+      id: "breadcrumb-line-casing",
+      type: "line",
+      source: "breadcrumbs",
+      layout: { "line-join": "round", "line-cap": "round" },
+      paint: {
+        "line-color": "#111827",
+        "line-width": 7,
+        "line-opacity": 0.45,
+      },
+    });
+    ensureLayer(this.map, {
+      id: "breadcrumb-line",
+      type: "line",
+      source: "breadcrumbs",
+      layout: { "line-join": "round", "line-cap": "round" },
+      paint: {
+        "line-gradient": warmGradientExpression(),
+        "line-width": 4,
+        "line-opacity": 0.95,
+      },
+    });
+    ensureGeoJsonSource(this.map, "breadcrumb-endpoints");
+    ensureLayer(this.map, {
+      id: "breadcrumb-endpoint-halo",
+      type: "circle",
+      source: "breadcrumb-endpoints",
+      paint: {
+        "circle-color": "#ffffff",
+        "circle-radius": ["case", ["==", ["get", "kind"], "end"], 9, 8],
+        "circle-opacity": 0.9,
+      },
+    });
+    ensureLayer(this.map, {
+      id: "breadcrumb-endpoint",
+      type: "circle",
+      source: "breadcrumb-endpoints",
+      paint: {
+        "circle-color": ["get", "color"],
+        "circle-radius": ["case", ["==", ["get", "kind"], "end"], 6, 5],
+        "circle-stroke-color": "#111827",
+        "circle-stroke-width": 1.5,
+      },
+    });
 
-    if (!this.map.getSource("history-trail")) {
-      this.map.addSource("history-trail", {
-        type: "geojson",
-        lineMetrics: true,
-        data: { type: "FeatureCollection", features: [] },
-      });
-    }
-    if (!this.map.getLayer("history-trail-line-casing")) {
-      this.map.addLayer({
-        id: "history-trail-line-casing",
-        type: "line",
-        source: "history-trail",
-        layout: { "line-join": "round", "line-cap": "round" },
-        paint: {
-          "line-color": "#111827",
-          "line-width": 7,
-          "line-opacity": 0.35,
-        },
-      });
-    }
-    if (!this.map.getLayer("history-trail-line")) {
-      this.map.addLayer({
-        id: "history-trail-line",
-        type: "line",
-        source: "history-trail",
-        layout: { "line-join": "round", "line-cap": "round" },
-        paint: {
-          "line-gradient": coldGradientExpression(),
-          "line-width": 4,
-          "line-opacity": 0.85,
-        },
-      });
-    }
-    if (!this.map.getSource("history-trail-endpoints")) {
-      this.map.addSource("history-trail-endpoints", {
-        type: "geojson",
-        data: { type: "FeatureCollection", features: [] },
-      });
-    }
-    if (!this.map.getLayer("history-trail-endpoint-halo")) {
-      this.map.addLayer({
-        id: "history-trail-endpoint-halo",
-        type: "circle",
-        source: "history-trail-endpoints",
-        paint: {
-          "circle-color": "#ffffff",
-          "circle-radius": 7,
-          "circle-opacity": 0.9,
-        },
-      });
-    }
-    if (!this.map.getLayer("history-trail-endpoint")) {
-      this.map.addLayer({
-        id: "history-trail-endpoint",
-        type: "circle",
-        source: "history-trail-endpoints",
-        paint: {
-          "circle-color": ["get", "color"],
-          "circle-radius": ["case", ["==", ["get", "kind"], "end"], 5, 4],
-          "circle-stroke-color": "#111827",
-          "circle-stroke-width": 1.5,
-        },
-      });
-    }
+    ensureGeoJsonSource(this.map, "history-trail", { lineMetrics: true });
+    ensureLayer(this.map, {
+      id: "history-trail-line-casing",
+      type: "line",
+      source: "history-trail",
+      layout: { "line-join": "round", "line-cap": "round" },
+      paint: {
+        "line-color": "#111827",
+        "line-width": 7,
+        "line-opacity": 0.35,
+      },
+    });
+    ensureLayer(this.map, {
+      id: "history-trail-line",
+      type: "line",
+      source: "history-trail",
+      layout: { "line-join": "round", "line-cap": "round" },
+      paint: {
+        "line-gradient": coldGradientExpression(),
+        "line-width": 4,
+        "line-opacity": 0.85,
+      },
+    });
+    ensureGeoJsonSource(this.map, "history-trail-endpoints");
+    ensureLayer(this.map, {
+      id: "history-trail-endpoint-halo",
+      type: "circle",
+      source: "history-trail-endpoints",
+      paint: {
+        "circle-color": "#ffffff",
+        "circle-radius": 7,
+        "circle-opacity": 0.9,
+      },
+    });
+    ensureLayer(this.map, {
+      id: "history-trail-endpoint",
+      type: "circle",
+      source: "history-trail-endpoints",
+      paint: {
+        "circle-color": ["get", "color"],
+        "circle-radius": ["case", ["==", ["get", "kind"], "end"], 5, 4],
+        "circle-stroke-color": "#111827",
+        "circle-stroke-width": 1.5,
+      },
+    });
 
-    if (!this.map.getSource("route")) {
-      this.map.addSource("route", {
-        type: "geojson",
-        data: { type: "FeatureCollection", features: [] },
-      });
-    }
-    if (!this.map.getLayer("route-line")) {
-      this.map.addLayer({
-        id: "route-line",
-        type: "line",
-        source: "route",
-        layout: { "line-join": "round", "line-cap": "round" },
-        paint: {
-          "line-color": "#0f9b8e",
-          "line-width": 4,
-          "line-opacity": 0.8,
-        },
-      });
-    }
+    ensureGeoJsonSource(this.map, "route");
+    ensureLayer(this.map, {
+      id: "route-line",
+      type: "line",
+      source: "route",
+      layout: { "line-join": "round", "line-cap": "round" },
+      paint: {
+        "line-color": "#0f9b8e",
+        "line-width": 4,
+        "line-opacity": 0.8,
+      },
+    });
 
     // Keep endpoint dots above route lines so start/end stay visible.
-    if (this.map.getLayer("history-trail-endpoint-halo")) this.map.moveLayer("history-trail-endpoint-halo");
-    if (this.map.getLayer("history-trail-endpoint")) this.map.moveLayer("history-trail-endpoint");
-    if (this.map.getLayer("breadcrumb-endpoint-halo")) this.map.moveLayer("breadcrumb-endpoint-halo");
-    if (this.map.getLayer("breadcrumb-endpoint")) this.map.moveLayer("breadcrumb-endpoint");
+    moveLayersToTop(this.map, [
+      "history-trail-endpoint-halo",
+      "history-trail-endpoint",
+      "breadcrumb-endpoint-halo",
+      "breadcrumb-endpoint",
+    ]);
 
     // Re-populate from state in case data arrived before this style loaded
     this.updateRouteLine();
     this.updateBreadcrumbs();
     this.updateHistoryTrail();
-    console.debug("[map] addRouteLayer: sources/layers ready, breadcrumb coords:", this.state.breadcrumbCoords.length);
   }
 
   async setTheme(theme: Theme) {
@@ -785,59 +740,37 @@ export class MapView {
     // Prefer the live route when present: streamer -> first active waypoint -> ...
     // Fall back to the static waypoint-to-waypoint route when no live position exists.
     const route = this.state.liveRoute ?? this.state.route;
-    if (!this.map.getSource("route")) return;
 
-    const source = this.map.getSource("route") as maplibregl.GeoJSONSource;
     if (!route) {
-      source.setData({ type: "FeatureCollection", features: [] });
+      setLineString(this.map, "route", []);
       return;
     }
 
     const coords = decodePolyline(route.polyline);
-    source.setData({
-      type: "Feature",
-      properties: {},
-      geometry: { type: "LineString", coordinates: coords },
-    });
+    setLineString(this.map, "route", coords, { minPoints: 1 });
   }
 
   private updateBreadcrumbs() {
-    if (!this.map.getSource("breadcrumbs")) {
-      console.debug("[map] updateBreadcrumbs: source not ready, coords:", this.state.breadcrumbCoords.length);
-      return;
-    }
-    const source = this.map.getSource("breadcrumbs") as maplibregl.GeoJSONSource;
     const endpointSource = this.map.getSource("breadcrumb-endpoints") as maplibregl.GeoJSONSource | undefined;
     const coords = this.state.breadcrumbCoords;
-    console.debug("[map] updateBreadcrumbs: setting", coords.length, "coords");
     if (coords.length < 2) {
-      source.setData({ type: "FeatureCollection", features: [] });
-      endpointSource?.setData({ type: "FeatureCollection", features: [] });
+      setLineString(this.map, "breadcrumbs", coords);
+      endpointSource?.setData(emptyFeatureCollection());
       return;
     }
-    source.setData({
-      type: "Feature",
-      properties: {},
-      geometry: { type: "LineString", coordinates: coords },
-    });
+    setLineString(this.map, "breadcrumbs", coords);
     endpointSource?.setData(warmEndpointFeatureCollection(coords));
   }
 
   private updateHistoryTrail() {
-    if (!this.map.getSource("history-trail")) return;
-    const source = this.map.getSource("history-trail") as maplibregl.GeoJSONSource;
     const endpointSource = this.map.getSource("history-trail-endpoints") as maplibregl.GeoJSONSource | undefined;
     const coords = this.state.historyTrail;
     if (coords.length < 2) {
-      source.setData({ type: "FeatureCollection", features: [] });
-      endpointSource?.setData({ type: "FeatureCollection", features: [] });
+      setLineString(this.map, "history-trail", coords);
+      endpointSource?.setData(emptyFeatureCollection());
       return;
     }
-    source.setData({
-      type: "Feature",
-      properties: {},
-      geometry: { type: "LineString", coordinates: coords },
-    });
+    setLineString(this.map, "history-trail", coords);
     endpointSource?.setData(coldEndpointFeatureCollection(coords));
   }
 

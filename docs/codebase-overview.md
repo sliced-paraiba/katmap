@@ -81,6 +81,7 @@ katmap/
 | `net.ts` | WebSocket lifecycle — connect to `ws(s)://host/ws`, JSON parse/send, exponential backoff reconnect (1s initial → 30s max). Supports client tags and `viewer=0` for non-viewer overlays |
 | `state.ts` | Reactive store with pub/sub. Fields: `waypoints`, `location`, `route`, `liveRoute`, `connected`, `userCount`, `lastError`, `units`. `applyServerMessage()` dispatches by message type |
 | `map.ts` | MapLibre wrapper — route polyline, numbered waypoint markers (draggable), streamer avatar marker, breadcrumb trails, context menus (right-click + mobile long-press), follow mode, reverse geocoding, POI popups |
+| `map-layers.ts` | Shared MapLibre helpers for GeoJSON sources, custom layers, line data, and style reload-safe layer re-creation |
 | `sidebar.ts` | Left panel — header with status dots, "Add streamer location" button, undo/delete-all actions, history browser, waypoint input (coordinates / URLs / Plus Codes), SortableJS drag-reorder, per-leg route maneuvers, active/inactive toggles |
 | `themes.ts` | Theme definitions (`THEMES`, `Theme` type), style JSON fetching, `applyTheme()` with raster fallback, PMTiles protocol registration. Shared across all pages |
 | `settings.ts` | `SettingsPopup` class — modal overlay with theme `<select>` and per-measurement unit toggles (distance, speed, altitude) |

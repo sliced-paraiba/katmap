@@ -87,6 +87,8 @@ Manages the WebSocket lifecycle:
 
 Wraps MapLibre GL JS with all map interaction logic. Theme application is delegated to `themes.ts`.
 
+Custom GeoJSON source/layer setup uses `map-layers.ts`; data replay after `style.load` stays in each page/view so theme changes restore the latest route and trail state.
+
 **Layers & Markers**:
 - **Route polyline**: GeoJSON `LineString` source, teal (`#0f9b8e`) with slight opacity. Separate layers for main route and live route
 - **Waypoint markers**: MapLibre `Marker` instances, numbered teal circles, draggable (`dragend` → `move_waypoint`). Active/inactive styling differs

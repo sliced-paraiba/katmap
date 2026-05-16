@@ -6,6 +6,7 @@ import { distanceMeters, formatDistanceKm } from "./geo";
 import { escapeHtml } from "./html";
 import { fitCoords, markerElement } from "./map-utils";
 import { ApiError, bindTokenInput, createTokenApi } from "./api";
+import { emptyFeatureCollection, ensureGeoJsonSource, ensureLayer, lineStringFeature, setGeoJsonData } from "./map-layers";
 import type { LonLat } from "./geo";
 import type { SnipeLocation, SnipeRoute, SnipeRouteRequest, SnipeStatus, TravelMode, UserLocation } from "./api-types";
 
@@ -48,16 +49,13 @@ const map = new maplibregl.Map({
 map.addControl(new maplibregl.NavigationControl());
 map.addControl(new maplibregl.AttributionControl({ compact: true }), "bottom-left");
 map.on("load", () => {
-  map.addSource("route", { type: "geojson", data: emptyFc() });
-  map.addLayer({ id: "route-casing", type: "line", source: "route", layout: { "line-join": "round", "line-cap": "round" }, paint: { "line-color": "#020617", "line-width": 8, "line-opacity": 0.7 } });
-  map.addLayer({ id: "route-line", type: "line", source: "route", layout: { "line-join": "round", "line-cap": "round" }, paint: { "line-color": "#22c55e", "line-width": 5, "line-opacity": 0.95 } });
+  ensureGeoJsonSource(map, "route");
+  ensureLayer(map, { id: "route-casing", type: "line", source: "route", layout: { "line-join": "round", "line-cap": "round" }, paint: { "line-color": "#020617", "line-width": 8, "line-opacity": 0.7 } });
+  ensureLayer(map, { id: "route-line", type: "line", source: "route", layout: { "line-join": "round", "line-cap": "round" }, paint: { "line-color": "#22c55e", "line-width": 5, "line-opacity": 0.95 } });
 });
 new ResizeObserver(() => map.resize()).observe($("map"));
 window.addEventListener("resize", () => map.resize());
 
-function emptyFc(): GeoJSON.FeatureCollection {
-  return { type: "FeatureCollection", features: [] };
-}
 function setStatus(s: string) { $("status").textContent = s; }
 function updateMarkers() {
   if (userLoc) {
@@ -137,15 +135,13 @@ async function route(force = false) {
 }
 
 function clearRoute() {
-  const source = map.getSource("route") as maplibregl.GeoJSONSource | undefined;
-  if (source) source.setData(emptyFc());
+  setGeoJsonData(map, "route", emptyFeatureCollection());
   $("summary").textContent = "No route";
   $("steps").innerHTML = '<li class="hint">Waiting for the streamer to go live.</li>';
 }
 function renderRoute(data: SnipeRoute) {
   const coords = decodePolyline(data.polyline);
-  const source = map.getSource("route") as maplibregl.GeoJSONSource | undefined;
-  if (source) source.setData(coords.length ? { type: "Feature", properties: {}, geometry: { type: "LineString", coordinates: coords } } : emptyFc());
+  setGeoJsonData(map, "route", coords.length ? lineStringFeature(coords) : emptyFeatureCollection());
   $("summary").textContent = `${data.distance_km.toFixed(1)} km · ${Math.round(data.duration_min)} min · ${mode}`;
   $("steps").innerHTML = data.maneuvers.slice(0, 30).map((m) => `<li>${escapeHtml(m.instruction)} <span class="hint">${formatDistanceKm(m.distance_km)}</span></li>`).join("") || '<li class="hint">No maneuvers.</li>';
   setStatus(`Updated ${new Date().toLocaleTimeString()}`);
