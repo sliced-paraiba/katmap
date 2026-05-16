@@ -41,7 +41,7 @@ The dev client runs at `http://localhost:5173`.
 katmap/
 ├── server/src/
 │   ├── main.rs          # Axum setup, env vars, route registration, graceful shutdown
-│   ├── types.rs         # Serde message types (ClientMessage/ServerMessage)
+│   ├── types.rs         # Serde/ts-rs message types (ClientMessage/ServerMessage)
 │   ├── ws.rs            # WebSocket handler, AppState, undo stack, live route logic
 │   ├── companion.rs     # Companion app location push, ordered trail accumulation
 │   ├── history.rs       # SQLite history persistence + authenticated web editor APIs
@@ -57,7 +57,8 @@ katmap/
 │   ├── overlay.ts       # OBS overlay entry point
 │   ├── admin-history.ts # Authenticated history editor entry point
 │   ├── snipe.ts         # Authenticated stream-sniping GPS page entry point
-│   ├── types.ts         # TypeScript message types (mirrors server)
+│   ├── types.ts         # Re-exports generated wire types plus client-only aliases
+│   ├── generated/types.ts # Generated TypeScript wire types from Rust
 │   ├── net.ts           # WebSocket client with exponential backoff reconnect
 │   ├── state.ts         # Reactive app state (pub/sub)
 │   ├── map.ts           # MapLibre GL JS — markers, route layer, context menu

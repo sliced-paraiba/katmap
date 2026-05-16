@@ -22,3 +22,7 @@ build: build-client build-server
 # Type-check the client
 check-client:
     nix-shell shell.nix --command "cd client && npx tsc --noEmit"
+
+# Regenerate checked-in TypeScript wire types from Rust structs/enums
+generate-types:
+    nix-shell shell.nix --command "cargo run --manifest-path server/Cargo.toml --bin export-types"

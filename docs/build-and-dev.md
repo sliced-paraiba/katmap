@@ -32,6 +32,7 @@ The dev client runs at `http://localhost:5173`.
 | `just build-server` | Release build of the Rust server |
 | `just build` | Build both client and server |
 | `just check-client` | Type-check the client without emitting (`tsc --noEmit`) |
+| `just generate-types` | Regenerate checked-in TypeScript wire types from `server/src/types.rs` |
 
 ## Running Without Just
 
@@ -46,6 +47,9 @@ nix-shell shell.nix --command "cd server && cargo build --release"
 
 # Type-check client
 nix-shell shell.nix --command "cd client && npx tsc --noEmit"
+
+# Regenerate TypeScript wire types
+nix-shell shell.nix --command "cargo run --manifest-path server/Cargo.toml --bin export-types"
 
 # Dev server
 nix-shell shell.nix --command "cd server && cargo run"

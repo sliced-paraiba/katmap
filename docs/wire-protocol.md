@@ -2,10 +2,18 @@
 
 All WebSocket messages are JSON objects with a `type` discriminator field, using `snake_case` names.
 
-Types are defined in two places and must be kept in sync manually:
+The Rust structs/enums are the source of truth for wire types:
 
-- **Server**: `server/src/types.rs` (Rust, Serde)
-- **Client**: `client/src/types.ts` (TypeScript)
+- **Server**: `server/src/types.rs` (Rust, Serde, ts-rs)
+- **Generated client declarations**: `client/src/generated/types.ts`
+- **Client re-exports and local aliases**: `client/src/types.ts`
+
+Regenerate the checked-in TypeScript declarations with:
+
+```bash
+cargo run --manifest-path server/Cargo.toml --bin export-types
+# or: just generate-types
+```
 
 ## Client → Server (`ClientMessage`)
 
@@ -35,10 +43,10 @@ Types are defined in two places and must be kept in sync manually:
 | `trail` | `coords: [number, number][]` | Accumulated breadcrumb trail coordinates `[lon, lat]` |
 | `live_status` | `live: boolean` | Whether the companion location session is active |
 
-The `location` message type is also defined as a standalone `LocationMessage` type in `client/src/types.ts` for reuse:
+The `location` message type is also exposed as a standalone `LocationMessage` type in `client/src/types.ts` for reuse:
 
 ```typescript
-export type LocationMessage = LocationUpdate & { type: "location" };
+export type LocationMessage = Extract<ServerMessage, { type: "location" }>;
 ```
 
 ## Data Types

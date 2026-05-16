@@ -40,6 +40,7 @@ graph TB
 ## Wire Protocol
 
 All messages are JSON objects with a `type` discriminator field, using `snake_case` names.
+Rust message definitions in `server/src/types.rs` are the source of truth; checked-in TypeScript declarations are generated into `client/src/generated/types.ts` with `cargo run --manifest-path server/Cargo.toml --bin export-types`.
 
 ### Client → Server (`ClientMessage`)
 
@@ -308,7 +309,7 @@ Manages the WebSocket lifecycle:
 - On message: JSON-parses into `ServerMessage`, calls the `onMessage` callback
 - On close: schedules reconnect with exponential backoff (1s initial, 30s max)
 - **`send(msg)`**: JSON-encodes and sends if the socket is open
-- Overlay connections append `?client=overlay` to opt out of viewer counting
+- Overlay connections append `viewer=0` to opt out of viewer counting
 - On reconnect, the server sends the full waypoint state, so the client is immediately in sync
 
 ### `map.ts` — MapView

@@ -1,7 +1,8 @@
 use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 use uuid::Uuid;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
 pub struct Waypoint {
     pub id: Uuid,
     pub lat: f64,
@@ -17,7 +18,7 @@ fn default_waypoint_active() -> bool {
 
 /// A single breadcrumb point with optional GeolocationCoordinates telemetry.
 /// Stored in the trail accumulator and persisted to SQLite telemetry column.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
 pub struct BreadcrumbPoint {
     /// GPS timestamp in milliseconds — used to sort out-of-order arrivals.
     #[serde(default)]
@@ -36,7 +37,7 @@ pub struct BreadcrumbPoint {
     pub speed: Option<f64>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
 pub struct RouteLeg {
     pub start_waypoint_id: Uuid,
     pub end_waypoint_id: Uuid,
@@ -45,7 +46,7 @@ pub struct RouteLeg {
     pub maneuvers: Vec<Maneuver>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
 pub struct Maneuver {
     pub instruction: String,
     pub distance_km: f64,
@@ -61,7 +62,7 @@ pub struct Maneuver {
     pub end_shape_index: u32,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ClientMessage {
     AddWaypoint {
@@ -98,7 +99,7 @@ pub enum ClientMessage {
     Undo,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ServerMessage {
     WaypointList {
