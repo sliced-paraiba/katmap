@@ -17,7 +17,7 @@ All shared mutable state lives in `AppState` (defined in `ws.rs`):
 | `companion_api_key` | `String` | API key for companion location push auth |
 | `display_name` | `String` | Display name for location broadcasts |
 | `avatar_path` | `String` | Local file path served by `/api/avatar` |
-| `history` | `Option<&'static HistoryState>` | SQLite connection + state for history persistence |
+| `history` | `Option<Arc<HistoryState>>` | SQLite connection + state for history persistence |
 | `social_links` | `SocialLinks` | Configured social media links (Discord, Kick, Twitch) |
 | `trail` | `Arc<Mutex<TrailAccumulator>>` | Active breadcrumb trail from companion app |
 | `live_location` | `Arc<RwLock<LiveLocation>>` | Latest valid streamer position + speed for live routing/sniping |

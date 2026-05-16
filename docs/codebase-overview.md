@@ -19,6 +19,7 @@ Live at [katmap.awawawa.mov](https://katmap.awawawa.mov).
 katmap/
 ├── server/src/
 │   ├── main.rs          # Axum setup, env vars, route registration, static file serving
+│   ├── lib.rs           # Shared library target used by server and admin binaries
 │   ├── types.rs         # Serde message types (ClientMessage/ServerMessage)
 │   ├── ws.rs            # WebSocket handler, AppState, undo stack, live route logic
 │   ├── companion.rs     # Companion app location push, ordered trail accumulation
@@ -61,6 +62,7 @@ katmap/
 | File | Purpose |
 |---|---|
 | `main.rs` | Axum server setup, environment variable parsing, `AppState` construction, route registration, graceful shutdown with trail save |
+| `lib.rs` | Shared module exports for the server binary, admin CLI, and unit tests |
 | `types.rs` | Serde-annotated enums for `ClientMessage`, `ServerMessage`, and supporting structs (`Waypoint`, `RouteLeg`, `Maneuver`, `BreadcrumbPoint`) |
 | `ws.rs` | WebSocket upgrade handler, `AppState` definition (all shared mutable state), message dispatch, undo system, route/broadcast logic, live route remaining-waypoint projection |
 | `companion.rs` | `POST /api/location` handler, `TrailAccumulator` for ordered breadcrumb accumulation, stale session detection (15 min timeout), graceful shutdown save, incomplete trail recovery on restart |
@@ -72,7 +74,7 @@ katmap/
 | `poi.rs` | `GET /api/poi` — Overpass API proxy for point-of-interest lookup near a coordinate. Results cached for 1 hour |
 | `debug.rs` | Debug/ops endpoints: `/api/version` (compile-time metadata), `/api/health` (server status), `/api/debug/location-pushes` (recent companion push snapshot). Tracks last 200 location pushes |
 | `auth.rs` | Authentication helpers for bearer token extraction |
-| `admin.rs` | Standalone CLI binary (`katmap-admin`) for SQLite maintenance — list, hide, delete stream history entries |
+| `admin.rs` | Standalone CLI binary (`katmap-admin`) for SQLite maintenance — list, hide, delete stream history entries using the shared history repository |
 
 ## Client Files
 

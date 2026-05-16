@@ -1,12 +1,12 @@
 use std::env;
 
 use chrono::DateTime;
+use katmap_server::history::{HistoryRepo, StoredSession, db_path};
 use rusqlite::Connection;
 use serde_json::json;
 
 fn main() {
-    let db_path = env::var("HISTORY_DB_PATH")
-        .unwrap_or_else(|_| "/opt/katmap/history.db".to_string());
+    let db_path = db_path();
 
     let mut args: Vec<String> = env::args().skip(1).collect();
     if args.is_empty() {
@@ -15,8 +15,8 @@ fn main() {
 
     let cmd = args.remove(0);
 
-    let conn =
-        Connection::open(&db_path).unwrap_or_else(|e| die(&format!("Can't open {db_path}: {e}")));
+    let conn = Connection::open(&db_path)
+        .unwrap_or_else(|e| die(&format!("Can't open {}: {e}", db_path.display())));
 
     match cmd.as_str() {
         "list" => cmd_list(&args, &conn),
@@ -38,7 +38,9 @@ fn usage() -> ! {
     eprintln!("  rename <id> <name>  Rename a session");
     eprintln!("  hide <id>         Hide a session from the web UI");
     eprintln!("  unhide <id>       Unhide a session");
-    eprintln!("  delete <id>       Permanently delete a session after JSON backup + typed confirmation");
+    eprintln!(
+        "  delete <id>       Permanently delete a session after JSON backup + typed confirmation"
+    );
     std::process::exit(1);
 }
 
@@ -68,72 +70,45 @@ fn fmt_duration(start_ms: i64, end_ms: i64) -> String {
     format!("{hrs}h {rem_mins}m")
 }
 
-struct Session {
-    id: i64,
-    streamer_id: String,
-    platform: String,
-    started_at: i64,
-    ended_at: i64,
-    session_id: Option<String>,
-    hidden: bool,
-    completed: bool,
-    stream_title: Option<String>,
-    breadcrumbs: String,
-}
-
-fn query_sessions(conn: &Connection, include_hidden: bool) -> Vec<Session> {
-    let sql = if include_hidden {
-        "SELECT id, streamer_id, platform, started_at, ended_at, session_id, hidden, completed, stream_title, breadcrumbs \
-         FROM streams ORDER BY started_at DESC"
-    } else {
-        "SELECT id, streamer_id, platform, started_at, ended_at, session_id, hidden, completed, stream_title, breadcrumbs \
-         FROM streams WHERE hidden = 0 ORDER BY started_at DESC"
-    };
-
-    let mut stmt = conn.prepare(sql).unwrap();
-    let rows = stmt
-        .query_map([], |row| {
-            Ok(Session {
-                id: row.get(0)?,
-                streamer_id: row.get(1)?,
-                platform: row.get(2)?,
-                started_at: row.get(3)?,
-                ended_at: row.get(4)?,
-                session_id: row.get(5)?,
-                hidden: row.get::<_, i32>(6)? != 0,
-                completed: row.get::<_, i32>(7)? != 0,
-                stream_title: row.get(8)?,
-                breadcrumbs: row.get(9)?,
-            })
-        })
-        .unwrap();
-
-    rows.filter_map(|r| r.ok()).collect()
+fn get_session_or_die(conn: &Connection, id: i64) -> StoredSession {
+    HistoryRepo::new(conn)
+        .get_session(id)
+        .unwrap_or_else(|e| die(&e.to_string()))
+        .unwrap_or_else(|| die(&format!("Session {id} not found")))
 }
 
 fn cmd_list(args: &[String], conn: &Connection) {
     let all = args.iter().any(|a| a == "--all");
-    let sessions = query_sessions(conn, all);
+    let sessions = HistoryRepo::new(conn)
+        .list_sessions(all)
+        .unwrap_or_else(|e| die(&e.to_string()));
 
     if sessions.is_empty() {
         println!("No sessions found.");
         return;
     }
 
-    println!("{:<5} {:<5} {:<5} {:<22} {:<10} {}", "ID", "Hidden", "Pts", "Started", "Duration", "Name");
+    println!(
+        "{:<5} {:<5} {:<5} {:<22} {:<10} {}",
+        "ID", "Hidden", "Pts", "Started", "Duration", "Name"
+    );
     println!("{}", "─".repeat(72));
 
     for s in &sessions {
-        let pts: usize = serde_json::from_str::<Vec<[f64; 2]>>(&s.breadcrumbs)
-            .map(|v| v.len())
-            .unwrap_or(0);
+        let pts = s.point_count();
         let hide = if s.hidden { "yes" } else { "" };
-        let name = s.session_id.as_deref().unwrap_or(&s.streamer_id);
+        let name = s.display_name();
         let dur = fmt_duration(s.started_at, s.ended_at);
         let incomplete = if !s.completed { " ⏳" } else { "" };
         println!(
             "{:<5} {:<5} {:<5} {:<22} {:<10} {}{}",
-            s.id, hide, pts, fmt_ts(s.started_at), dur, name, incomplete,
+            s.id,
+            hide,
+            pts,
+            fmt_ts(s.started_at),
+            dur,
+            name,
+            incomplete,
         );
     }
 }
@@ -144,32 +119,14 @@ fn cmd_show(args: &mut Vec<String>, conn: &Connection) {
     }
     let id: i64 = args.remove(0).parse().unwrap_or_else(|_| die("Invalid id"));
 
-    let s: Session = conn
-        .query_row(
-            "SELECT id, streamer_id, platform, started_at, ended_at, session_id, hidden, completed, stream_title, breadcrumbs \
-             FROM streams WHERE id = ?1",
-            [id],
-            |row| {
-                Ok(Session {
-                    id: row.get(0)?,
-                    streamer_id: row.get(1)?,
-                    platform: row.get(2)?,
-                    started_at: row.get(3)?,
-                    ended_at: row.get(4)?,
-                    session_id: row.get(5)?,
-                    hidden: row.get::<_, i32>(6)? != 0,
-                    completed: row.get::<_, i32>(7)? != 0,
-                    stream_title: row.get(8)?,
-                    breadcrumbs: row.get(9)?,
-                })
-            },
-        )
-        .unwrap_or_else(|_| die(&format!("Session {id} not found")));
-
-    let pts: Vec<[f64; 2]> = serde_json::from_str(&s.breadcrumbs).unwrap_or_default();
+    let s = get_session_or_die(conn, id);
+    let pts = s.breadcrumbs();
 
     println!("ID:          {}", s.id);
-    println!("Name:        {}", s.session_id.as_deref().unwrap_or("(none)"));
+    println!(
+        "Name:        {}",
+        s.session_id.as_deref().unwrap_or("(none)")
+    );
     println!("Streamer:    {}", s.streamer_id);
     println!("Platform:    {}", s.platform);
     println!("Started:     {}", fmt_ts(s.started_at));
@@ -196,11 +153,8 @@ fn cmd_rename(args: &mut Vec<String>, conn: &Connection) {
     let id: i64 = args.remove(0).parse().unwrap_or_else(|_| die("Invalid id"));
     let name = args.join(" ");
 
-    let changed = conn
-        .execute(
-            "UPDATE streams SET session_id = ?1 WHERE id = ?2",
-            rusqlite::params![name, id],
-        )
+    let changed = HistoryRepo::new(conn)
+        .update_session_id(id, Some(&name))
         .unwrap_or_else(|e| die(&e.to_string()));
 
     if changed == 0 {
@@ -218,20 +172,14 @@ fn cmd_hide(args: &mut Vec<String>, conn: &Connection, hide: bool) {
     }
     let id: i64 = args.remove(0).parse().unwrap_or_else(|_| die("Invalid id"));
 
-    let changed = conn
-        .execute(
-            "UPDATE streams SET hidden = ?1 WHERE id = ?2",
-            rusqlite::params![hide as i32, id],
-        )
+    let changed = HistoryRepo::new(conn)
+        .set_hidden(id, hide)
         .unwrap_or_else(|e| die(&e.to_string()));
 
     if changed == 0 {
         die(&format!("Session {id} not found"));
     }
-    println!(
-        "Session {id} {}",
-        if hide { "hidden" } else { "unhidden" }
-    );
+    println!("Session {id} {}", if hide { "hidden" } else { "unhidden" });
 }
 
 fn cmd_delete(args: &mut Vec<String>, conn: &Connection) {
@@ -240,32 +188,8 @@ fn cmd_delete(args: &mut Vec<String>, conn: &Connection) {
     }
     let id: i64 = args.remove(0).parse().unwrap_or_else(|_| die("Invalid id"));
 
-    let backup = conn
-        .query_row(
-            "SELECT id, streamer_id, platform, started_at, ended_at, stream_title, viewer_count, breadcrumbs, completed, session_id, hidden, telemetry, trail_edits
-             FROM streams WHERE id = ?1",
-            [id],
-            |row| {
-                let session_id: Option<String> = row.get(9)?;
-                let streamer_id: String = row.get(1)?;
-                Ok(json!({
-                    "id": row.get::<_, i64>(0)?,
-                    "streamer_id": streamer_id,
-                    "platform": row.get::<_, String>(2)?,
-                    "started_at": row.get::<_, i64>(3)?,
-                    "ended_at": row.get::<_, i64>(4)?,
-                    "stream_title": row.get::<_, Option<String>>(5)?,
-                    "viewer_count": row.get::<_, Option<i32>>(6)?,
-                    "breadcrumbs": row.get::<_, String>(7)?,
-                    "completed": row.get::<_, i32>(8)? != 0,
-                    "session_id": session_id,
-                    "hidden": row.get::<_, i32>(10)? != 0,
-                    "telemetry": row.get::<_, Option<String>>(11)?,
-                    "trail_edits": row.get::<_, Option<String>>(12)?,
-                }))
-            },
-        )
-        .unwrap_or_else(|_| die(&format!("Session {id} not found")));
+    let session = get_session_or_die(conn, id);
+    let backup = session_backup_json(&session);
 
     let name = backup
         .get("session_id")
@@ -288,12 +212,30 @@ fn cmd_delete(args: &mut Vec<String>, conn: &Connection) {
         return;
     }
 
-    let changed = conn
-        .execute("DELETE FROM streams WHERE id = ?1", [id])
+    let changed = HistoryRepo::new(conn)
+        .delete_session(id)
         .unwrap_or_else(|e| die(&e.to_string()));
 
     if changed == 0 {
         die(&format!("Session {id} not found"));
     }
     println!("Session {id} deleted.");
+}
+
+fn session_backup_json(session: &StoredSession) -> serde_json::Value {
+    json!({
+        "id": session.id,
+        "streamer_id": session.streamer_id,
+        "platform": session.platform,
+        "started_at": session.started_at,
+        "ended_at": session.ended_at,
+        "stream_title": session.stream_title,
+        "viewer_count": session.viewer_count,
+        "breadcrumbs": session.breadcrumbs_json,
+        "completed": session.completed,
+        "session_id": session.session_id,
+        "hidden": session.hidden,
+        "telemetry": session.telemetry_json,
+        "trail_edits": session.trail_edits_json,
+    })
 }

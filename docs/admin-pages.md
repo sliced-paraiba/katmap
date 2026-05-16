@@ -92,7 +92,7 @@ No authentication required (intended for local debugging).
 
 ## `katmap-admin` — CLI Tool
 
-A standalone binary (`server/src/admin.rs`, built as `katmap-admin`) for SQLite history maintenance.
+A standalone binary (`server/src/admin.rs`, built as `katmap-admin`) for SQLite history maintenance. It reuses the shared history repository from the server library target.
 
 **Usage**: Reads `HISTORY_DB_PATH` environment variable for the database path.
 

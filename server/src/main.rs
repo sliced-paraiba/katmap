@@ -1,17 +1,3 @@
-mod auth;
-mod companion;
-mod debug;
-#[cfg(test)]
-mod domain_tests;
-mod geo;
-mod history;
-mod poi;
-mod resolve;
-mod snipe;
-mod types;
-mod valhalla;
-mod ws;
-
 use std::sync::Arc;
 use std::sync::atomic::AtomicUsize;
 
@@ -25,6 +11,7 @@ use tokio::sync::{Mutex, RwLock, broadcast};
 use tower_http::cors::{Any, CorsLayer};
 use tower_http::services::ServeDir;
 
+use katmap_server::{companion, debug, history, poi, resolve, snipe, types, ws};
 use ws::{AppState, SocialLinks, ws_handler};
 
 #[tokio::main]
@@ -99,12 +86,11 @@ async fn main() {
         social_links.twitch.is_some()
     );
 
-    let history_state: &'static history::HistoryState =
-        Box::leak(Box::new(history::init_history(history::db_path()).await));
+    let history_state = Arc::new(history::init_history(history::db_path()).await);
 
     const RESUME_INCOMPLETE_WINDOW_MS: i64 = 15 * 60 * 1000;
     let initial_trail = match history::load_latest_incomplete_trail(
-        history_state,
+        &history_state,
         &display_name,
         "companion",
     )
@@ -133,7 +119,7 @@ async fn main() {
                     .as_ref()
                     .and_then(|telemetry| serde_json::to_string(telemetry).ok());
                 if let Err(e) = history::mark_trail_complete(
-                    history_state,
+                    &history_state,
                     trail.id,
                     trail.ended_at,
                     &trail.breadcrumbs,
@@ -163,7 +149,7 @@ async fn main() {
         companion_api_key,
         display_name,
         avatar_path: avatar_path.clone(),
-        history: Some(history_state),
+        history: Some(history_state.clone()),
         social_links,
         trail: Arc::new(Mutex::new(initial_trail)),
         live_location: Arc::new(RwLock::new(ws::LiveLocation::default())),

@@ -37,7 +37,7 @@ pub enum LocationPush {
 }
 
 #[derive(Clone, Default)]
-pub(crate) struct TrailAccumulator {
+pub struct TrailAccumulator {
     pub points: Vec<BreadcrumbPoint>,
     pub started_at: i64,
     pub last_location_ts: i64,
@@ -50,7 +50,7 @@ pub(crate) struct TrailAccumulator {
 }
 
 impl TrailAccumulator {
-    pub(crate) fn from_incomplete_trail(
+    pub fn from_incomplete_trail(
         recovered: crate::history::IncompleteTrail,
         fallback_session_name: String,
     ) -> Self {
@@ -235,7 +235,7 @@ pub async fn location_handler(
             // process crashes, and restarts mid-stream safe: the incomplete row
             // is always close to the in-memory trail and can be resumed on boot.
             if let Some(snapshot) = persist_snapshot {
-                if let Some(history) = state.history {
+                if let Some(history) = &state.history {
                     let streamer_id = state.display_name.clone();
                     let session_name = snapshot.session_name.clone();
                     let started_at = snapshot.started_at;
@@ -294,7 +294,7 @@ async fn finalize_trail(state: &AppState, trail: &TrailAccumulator, reason: &str
 
     let now = chrono::Utc::now().timestamp_millis();
 
-    if let Some(history) = state.history {
+    if let Some(history) = &state.history {
         let coords = trail.coords();
         let telemetry_json = serde_json::to_string(&trail.points).ok();
         if let Some(id) = trail.incomplete_trail_id {
@@ -467,7 +467,7 @@ pub async fn save_on_shutdown(state: &AppState) {
     drop(trail);
 
     if snapshot.session_active && !snapshot.points.is_empty() {
-        if let Some(history) = state.history {
+        if let Some(history) = &state.history {
             let coords = snapshot.coords();
             let telemetry_json = serde_json::to_string(&snapshot.points).ok();
             match upsert_incomplete_trail(

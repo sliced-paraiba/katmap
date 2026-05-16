@@ -241,7 +241,7 @@ pub struct AppState {
     pub companion_api_key: String,
     pub display_name: String,
     pub avatar_path: String,
-    pub history: Option<&'static crate::history::HistoryState>,
+    pub history: Option<Arc<crate::history::HistoryState>>,
     pub social_links: SocialLinks,
     pub trail: Arc<Mutex<TrailAccumulator>>,
     pub live_location: Arc<RwLock<LiveLocation>>,
