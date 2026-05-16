@@ -78,7 +78,7 @@ katmap/
 | `debug-location-pushes.ts` | Debug page showing recent companion location pushes with timestamps and telemetry |
 | `weather-overlay.ts` | Weather overlay entry point |
 | `types.ts` | TypeScript interfaces and discriminated unions mirroring `server/src/types.rs`. Manually kept in sync |
-| `net.ts` | WebSocket lifecycle — connect to `ws(s)://host/ws`, JSON parse/send, exponential backoff reconnect (1s initial → 30s max). Supports `?client=overlay` to opt out of viewer counting |
+| `net.ts` | WebSocket lifecycle — connect to `ws(s)://host/ws`, JSON parse/send, exponential backoff reconnect (1s initial → 30s max). Supports client tags and `viewer=0` for non-viewer overlays |
 | `state.ts` | Reactive store with pub/sub. Fields: `waypoints`, `location`, `route`, `liveRoute`, `connected`, `userCount`, `lastError`, `units`. `applyServerMessage()` dispatches by message type |
 | `map.ts` | MapLibre wrapper — route polyline, numbered waypoint markers (draggable), streamer avatar marker, breadcrumb trails, context menus (right-click + mobile long-press), follow mode, reverse geocoding, POI popups |
 | `sidebar.ts` | Left panel — header with status dots, "Add streamer location" button, undo/delete-all actions, history browser, waypoint input (coordinates / URLs / Plus Codes), SortableJS drag-reorder, per-leg route maneuvers, active/inactive toggles |

@@ -101,7 +101,7 @@ Live routes only include waypoints that are ahead of the streamer. The `remainin
 
 ## Viewer Counting
 
-WebSocket connections append `?client=overlay` to opt out of viewer counting (used by OBS overlay). Only main app connections increment `connected_count`. The `user_count` message is broadcast to all clients on connect/disconnect.
+WebSocket overlay connections pass `viewer=0` to opt out of viewer counting. Known legacy overlay client tags (`client=overlay`, `client=weather-overlay`) are also excluded. Only main app connections increment `connected_count`. The `user_count` message is broadcast to all clients on connect/disconnect.
 
 ## Centralized Strings
 

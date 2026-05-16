@@ -27,7 +27,7 @@ Types are defined in two places and must be kept in sync manually:
 | Type | Fields | Description |
 |---|---|---|
 | `waypoint_list` | `waypoints: Waypoint[]` | Full waypoint state. Sent after every mutation and on initial connect |
-| `user_count` | `count: number` | Connected viewer count (excludes overlay connections) |
+| `user_count` | `count: number` | Connected viewer count (excludes `viewer=0` overlay connections) |
 | `location` | `lat`, `lon`, `timestamp_ms`, `display_name?`, `altitude?`, `accuracy?`, `altitude_accuracy?`, `heading?`, `speed?` | Streamer's live GPS position with full telemetry |
 | `route_result` | `polyline`, `distance_km`, `duration_min`, `legs: RouteLeg[]` | Valhalla route calculation result (active waypoints only) |
 | `live_route_result` | `polyline`, `distance_km`, `duration_min`, `legs`, `speed_kmh` | Route from streamer's live position through remaining waypoints ahead of them |

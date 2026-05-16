@@ -10,6 +10,7 @@
 
 import { ServerMessage } from "./types";
 import { wmoEmoji, wmoDescription } from "./weather";
+import { Connection } from "./net";
 
 // ── DOM ────────────────────────────────────────────────────────────────
 
@@ -36,41 +37,6 @@ let fetching = false;
 let refreshTimer: ReturnType<typeof setInterval> | null = null;
 let utcOffsetSeconds: number | null = null;
 let clockTimer: ReturnType<typeof setInterval> | null = null;
-
-// ── WebSocket ──────────────────────────────────────────────────────────
-
-let ws: WebSocket;
-let reconnectDelay = 1000;
-
-function connect() {
-  const protocol = location.protocol === "https:" ? "wss:" : "ws:";
-  ws = new WebSocket(`${protocol}//${location.host}/ws?client=weather-overlay`);
-
-  ws.onopen = () => {
-    console.log("[weather] connected");
-    reconnectDelay = 1000;
-    // Fetch fallback weather immediately in case no one is live
-    if (lastLat === null) {
-      fetchWeather(FALLBACK_LAT, FALLBACK_LON);
-    }
-  };
-
-  ws.onmessage = (e) => {
-    try {
-      handleMessage(JSON.parse(e.data));
-    } catch (err) {
-      console.error("[weather] parse error:", err);
-    }
-  };
-
-  ws.onclose = () => {
-    console.log("[weather] disconnected, reconnecting…");
-    setTimeout(connect, reconnectDelay);
-    reconnectDelay = Math.min(reconnectDelay * 2, 30_000);
-  };
-
-  ws.onerror = () => ws.close();
-}
 
 function handleMessage(msg: ServerMessage) {
   if (msg.type !== "location") return;
@@ -253,4 +219,16 @@ function startClock() {
 
 // ── Start ──────────────────────────────────────────────────────────────
 
-connect();
+new Connection(
+  handleMessage,
+  (connected) => {
+    if (connected && lastLat === null) {
+      void fetchWeather(FALLBACK_LAT, FALLBACK_LON);
+    }
+  },
+  {
+    client: "weather-overlay",
+    countAsViewer: false,
+    logPrefix: "[weather]",
+  },
+);

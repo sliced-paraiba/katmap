@@ -77,9 +77,9 @@ Simple observable pub/sub store:
 Manages the WebSocket lifecycle:
 
 - **Connect**: `ws(s)://${location.host}/ws` (auto-detects wss:// on HTTPS)
-- **Overlay**: append `?client=overlay` to opt out of viewer counting
+- **Overlays**: pass `client` plus `viewer=0` to opt out of viewer counting
 - **On message**: JSON-parses into `ServerMessage`, calls `onMessage` callback
-- **On close**: schedules reconnect with exponential backoff (1s initial, 30s max, jittered)
+- **On close**: schedules reconnect with exponential backoff (1s initial, 30s max)
 - **`send(msg: ClientMessage)`**: JSON-encodes and sends if socket is `OPEN`
 - **Reconnect sync**: on reconnect, the server sends full `waypoint_list` + last `location` + active `trail` + `live_status`
 

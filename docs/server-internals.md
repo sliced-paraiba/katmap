@@ -33,7 +33,7 @@ All routes registered in `main.rs`:
 
 | Method | Path | Handler | Description |
 |---|---|---|---|
-| GET | `/ws` | `ws.rs` | WebSocket upgrade. `?client=overlay` excludes from viewer count |
+| GET | `/ws` | `ws.rs` | WebSocket upgrade. `viewer=0` excludes overlays from viewer count |
 | GET | `/api/config` | `main.rs` (inline) | Server config: display name, social links |
 | GET | `/api/avatar` | `main.rs` (inline) | Local avatar image (auto-detects MIME type) |
 | GET | `/api/version` | `debug.rs` | Compile-time version metadata (`commit`, `build_time`) |
@@ -103,7 +103,7 @@ sequenceDiagram
 ### Viewer Counting
 
 - Main app connections increment `connected_count`
-- Overlay connections (`?client=overlay`) receive `user_count` messages but don't increment the count
+- Overlay connections (`viewer=0`, or known overlay client tags) receive `user_count` messages but don't increment the count
 - `UserCount` messages are broadcast on every connect/disconnect
 
 ## Undo System

@@ -7,6 +7,7 @@ import { Theme, RASTER_STYLE, applyTheme, registerPmtiles } from "./themes";
 import { warmEndpointFeatureCollection, warmGradientExpression } from "./gradients";
 import { haversineMeters } from "./geo";
 import { formatSpeedMs, formatAltitude } from "./units";
+import { Connection } from "./net";
 
 // URL params for OBS configurability
 const params = new URLSearchParams(window.location.search);
@@ -21,37 +22,6 @@ const themeParam = (params.get("theme") ?? "dark") as Theme;
 /** Default location when no one is live (Seattle downtown). */
 const FALLBACK_LAT = 47.6062;
 const FALLBACK_LON = -122.3321;
-
-// ── WebSocket ──────────────────────────────────────────────────────────
-
-let ws: WebSocket;
-let reconnectDelay = 1000;
-
-function connect() {
-  const protocol = location.protocol === "https:" ? "wss:" : "ws:";
-  ws = new WebSocket(`${protocol}//${location.host}/ws?client=overlay`);
-
-  ws.onopen = () => {
-    console.log("[overlay] connected");
-    reconnectDelay = 1000;
-  };
-
-  ws.onmessage = (e) => {
-    try {
-      handleMessage(JSON.parse(e.data));
-    } catch (err) {
-      console.error("[overlay] parse error:", err);
-    }
-  };
-
-  ws.onclose = () => {
-    console.log("[overlay] disconnected, reconnecting…");
-    setTimeout(connect, reconnectDelay);
-    reconnectDelay = Math.min(reconnectDelay * 2, 30_000);
-  };
-
-  ws.onerror = () => ws.close();
-}
 
 // ── Map ────────────────────────────────────────────────────────────────
 
@@ -434,4 +404,8 @@ map.once("load", () => {
   });
 });
 
-connect();
+new Connection(handleMessage, () => {}, {
+  client: "overlay",
+  countAsViewer: false,
+  logPrefix: "[overlay]",
+});
