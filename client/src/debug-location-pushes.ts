@@ -1,14 +1,15 @@
 import "./debug-location-pushes.css";
+import { bindTokenInput, createTokenApi } from "./api";
 import { escapeHtml } from "./html";
 import type { DebugPush, DebugSnapshot } from "./api-types";
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const tokenEl = $("token") as HTMLInputElement;
 const autoEl = $("auto") as HTMLInputElement;
+const api = createTokenApi(tokenEl, { parse: "json" });
 let timer: number | null = null;
 
-tokenEl.value = localStorage.getItem("katmap-debug-token") || "";
-tokenEl.addEventListener("input", () => localStorage.setItem("katmap-debug-token", tokenEl.value));
+bindTokenInput(tokenEl, "katmap-debug-token");
 $("refresh").onclick = () => void refresh();
 autoEl.onchange = () => setupAutoRefresh();
 setupAutoRefresh();
@@ -25,11 +26,7 @@ async function refresh() {
     return;
   }
   try {
-    const res = await fetch("/api/debug/location-pushes", {
-      headers: { Authorization: `Bearer ${tokenEl.value}` },
-    });
-    if (!res.ok) throw new Error(await res.text() || res.statusText);
-    render(await res.json() as DebugSnapshot);
+    render(await api<DebugSnapshot>("/api/debug/location-pushes"));
     setStatus(`Updated ${new Date().toLocaleTimeString()}`);
   } catch (e) {
     setStatus(e instanceof Error ? e.message : String(e));

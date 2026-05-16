@@ -3,14 +3,15 @@ import "maplibre-gl/dist/maplibre-gl.css";
 import "./admin-history.css";
 import { Theme, RASTER_STYLE, applyTheme, isTheme, registerPmtiles } from "./themes";
 import { escapeHtml } from "./html";
+import { bindTokenInput, createTokenApi } from "./api";
 import type { AdminHistoryEntry } from "./api-types";
 import type { LonLat } from "./geo";
 import type { BreadcrumbPoint } from "./types";
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const tokenEl = $("token") as HTMLInputElement;
-tokenEl.value = localStorage.getItem("katmap-admin-token") || "";
-tokenEl.addEventListener("input", () => localStorage.setItem("katmap-admin-token", tokenEl.value));
+bindTokenInput(tokenEl, "katmap-admin-token");
+const api = createTokenApi(tokenEl);
 
 let entries: AdminHistoryEntry[] = [];
 let current: AdminHistoryEntry | null = null;
@@ -102,17 +103,6 @@ map.on("click", (e) => {
 
 function emptyFc(): GeoJSON.FeatureCollection {
   return { type: "FeatureCollection", features: [] };
-}
-
-function authHeaders(): Record<string, string> {
-  return { Authorization: `Bearer ${tokenEl.value}`, "Content-Type": "application/json" };
-}
-
-async function api<T>(url: string, opts: RequestInit = {}): Promise<T> {
-  const res = await fetch(url, { ...opts, headers: { ...authHeaders(), ...(opts.headers || {}) } });
-  if (!res.ok) throw new Error(await res.text() || res.statusText);
-  const ct = res.headers.get("content-type") || "";
-  return (ct.includes("json") ? await res.json() : await res.text()) as T;
 }
 
 function fmt(ms: number): string {

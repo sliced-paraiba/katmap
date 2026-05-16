@@ -5,13 +5,14 @@ import { decodePolyline } from "./polyline";
 import { distanceMeters, formatDistanceKm } from "./geo";
 import { escapeHtml } from "./html";
 import { fitCoords, markerElement } from "./map-utils";
+import { ApiError, bindTokenInput, createTokenApi } from "./api";
 import type { LonLat } from "./geo";
 import type { SnipeLocation, SnipeRoute, SnipeRouteRequest, SnipeStatus, TravelMode, UserLocation } from "./api-types";
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const tokenEl = $("token") as HTMLInputElement;
-tokenEl.value = localStorage.getItem("katmap-snipe-token") || "";
-tokenEl.addEventListener("input", () => localStorage.setItem("katmap-snipe-token", tokenEl.value));
+bindTokenInput(tokenEl, "katmap-snipe-token");
+const api = createTokenApi(tokenEl, { parse: "json" });
 
 let mode: TravelMode = "walking";
 let userLoc: UserLocation | null = null;
@@ -56,23 +57,6 @@ window.addEventListener("resize", () => map.resize());
 
 function emptyFc(): GeoJSON.FeatureCollection {
   return { type: "FeatureCollection", features: [] };
-}
-function authHeaders(): Record<string, string> {
-  return { Authorization: `Bearer ${tokenEl.value}`, "Content-Type": "application/json" };
-}
-class ApiError extends Error {
-  constructor(message: string, readonly status: number, readonly retryAfter: number | null) {
-    super(message);
-  }
-}
-
-async function api<T>(url: string, opts: RequestInit = {}): Promise<T> {
-  const res = await fetch(url, { ...opts, headers: { ...authHeaders(), ...(opts.headers || {}) } });
-  if (!res.ok) {
-    const retryAfter = Number.parseInt(res.headers.get("retry-after") || "", 10);
-    throw new ApiError(await res.text() || res.statusText, res.status, Number.isFinite(retryAfter) ? retryAfter : null);
-  }
-  return await res.json() as T;
 }
 function setStatus(s: string) { $("status").textContent = s; }
 function updateMarkers() {
