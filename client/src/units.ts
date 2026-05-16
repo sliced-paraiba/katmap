@@ -66,6 +66,10 @@ export function formatDistance(km: number, units: UnitSystem): string {
   return `${km.toFixed(1)} km`;
 }
 
+export function formatDistanceKm(km: number): string {
+  return formatDistance(km, "metric");
+}
+
 /** Format a speed given in km/h using the specified unit system. */
 export function formatSpeed(kmh: number, units: UnitSystem): string {
   if (units === "imperial") {

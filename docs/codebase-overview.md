@@ -23,6 +23,7 @@ katmap/
 │   ├── ws.rs            # WebSocket handler, AppState, undo stack, live route logic
 │   ├── companion.rs     # Companion app location push, ordered trail accumulation
 │   ├── history.rs       # SQLite history persistence + authenticated web editor APIs
+│   ├── geo.rs           # Shared geographic math helpers
 │   ├── snipe.rs         # Authenticated stream-sniping GPS route API/page
 │   ├── valhalla.rs      # Valhalla route calculation proxy
 │   ├── resolve.rs       # Google Maps short link resolution
@@ -41,6 +42,11 @@ katmap/
 │   ├── net.ts           # WebSocket client with exponential backoff reconnect
 │   ├── state.ts         # Reactive app state (pub/sub)
 │   ├── map.ts           # MapLibre GL JS — markers, route layer, context menu, POI
+│   ├── map-layers.ts    # Shared MapLibre source/layer helpers
+│   ├── geocoding.ts     # Reverse geocoding helper for waypoint labels
+│   ├── waypoint-input.ts # Coordinate, Google Maps URL, short-link, and Plus Code parsing
+│   ├── toast.ts         # Shared toast container helpers
+│   ├── maneuvers.ts     # Valhalla maneuver icon mapping
 │   ├── sidebar.ts       # Waypoint list, drag-reorder, route maneuvers, history browser
 │   ├── themes.ts        # Theme definitions, fetch, apply, PMTiles registration (shared)
 │   ├── settings.ts      # Settings popup — theme select + per-measurement unit toggles
@@ -59,6 +65,7 @@ katmap/
 | `ws.rs` | WebSocket upgrade handler, `AppState` definition (all shared mutable state), message dispatch, undo system, route/broadcast logic, live route remaining-waypoint projection |
 | `companion.rs` | `POST /api/location` handler, `TrailAccumulator` for ordered breadcrumb accumulation, stale session detection (15 min timeout), graceful shutdown save, incomplete trail recovery on restart |
 | `history.rs` | SQLite schema + queries for stream history, `GET /api/history` public endpoint (with non-destructive edit application), authenticated admin CRUD APIs (list, update, delete, edits) |
+| `geo.rs` | Shared geographic math helpers, including server-side haversine distance |
 | `snipe.rs` | `GET /snipe` page redirect, `/api/snipe/status` and `/api/snipe/route` endpoints for authenticated GPS sniping. Rate-limited via `SnipeRouteLimiter` |
 | `valhalla.rs` | Route calculation proxy — takes waypoint list, POSTs to Valhalla, merges multi-leg precision-6 polylines, remaps maneuver shape indices |
 | `resolve.rs` | `GET /resolve-url` — follows Google Maps short link redirects to extract full URLs (whitelisted to Google Maps hosts only) |
@@ -77,6 +84,10 @@ katmap/
 | `snipe.ts` | Stream sniping page — browser GPS routed to streamer location via Valhalla. Walking/cycling/car modes |
 | `debug-location-pushes.ts` | Debug page showing recent companion location pushes with timestamps and telemetry |
 | `weather-overlay.ts` | Weather overlay entry point |
+| `waypoint-input.ts` | Pure waypoint input parsing for coordinates, Google Maps URLs, Google short links, and Plus Codes |
+| `geocoding.ts` | Reverse geocoding helper for user-facing waypoint labels |
+| `toast.ts` | Shared toast container and action-toast helpers |
+| `maneuvers.ts` | Valhalla maneuver type to icon mapping |
 | `types.ts` | TypeScript interfaces and discriminated unions mirroring `server/src/types.rs`. Manually kept in sync |
 | `net.ts` | WebSocket lifecycle — connect to `ws(s)://host/ws`, JSON parse/send, exponential backoff reconnect (1s initial → 30s max). Supports client tags and `viewer=0` for non-viewer overlays |
 | `state.ts` | Reactive store with pub/sub. Fields: `waypoints`, `location`, `route`, `liveRoute`, `connected`, `userCount`, `lastError`, `units`. `applyServerMessage()` dispatches by message type |

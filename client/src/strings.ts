@@ -159,6 +159,23 @@ export const strings = {
     raster: "Raster (OSM)",
   },
 
+  /** Settings popup */
+  settings: {
+    heading: "Settings",
+    close: "Close",
+    mapTheme: "Map Theme",
+    units: "Units",
+    distance: "Distance",
+    speed: "Speed",
+    altitude: "Altitude",
+    distanceMetric: "km / m",
+    distanceImperial: "mi / ft",
+    speedMetric: "km/h",
+    speedImperial: "mph",
+    altitudeMetric: "m",
+    altitudeImperial: "ft",
+  },
+
   /** Overlay (OBS browser source) */
   overlay: {
     title: "KatMap Overlay",

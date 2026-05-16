@@ -339,7 +339,7 @@ async fn maybe_auto_complete_first_waypoint(state: &AppState, lat: f64, lon: f64
         return;
     };
 
-    let distance_m = haversine_m(lat, lon, first.lat, first.lon);
+    let distance_m = crate::geo::haversine_m(lat, lon, first.lat, first.lon);
     if distance_m > state.auto_complete.radius_m {
         let mut candidate = state.auto_complete_candidate.lock().await;
         if candidate
@@ -383,16 +383,6 @@ async fn maybe_auto_complete_first_waypoint(state: &AppState, lat: f64, lon: f64
         );
     }
     *state.auto_complete_candidate.lock().await = None;
-}
-
-fn haversine_m(lat1: f64, lon1: f64, lat2: f64, lon2: f64) -> f64 {
-    let r = 6_371_000.0;
-    let dlat = (lat2 - lat1).to_radians();
-    let dlon = (lon2 - lon1).to_radians();
-    let lat1 = lat1.to_radians();
-    let lat2 = lat2.to_radians();
-    let a = (dlat / 2.0).sin().powi(2) + lat1.cos() * lat2.cos() * (dlon / 2.0).sin().powi(2);
-    2.0 * r * a.sqrt().asin()
 }
 
 pub async fn status_handler(

@@ -111,7 +111,7 @@ Custom GeoJSON source/layer setup uses `map-layers.ts`; data replay after `style
 
 **Follow mode**: `setFollow(on)` / `getFollow()`. When enabled, the map eases to the streamer's position on every `location` update. Auto-disables on manual map drag.
 
-**Reverse geocoding**: `reverseGeocode(lat, lon)` calls Nominatim (`https://nominatim.openstreetmap.org/reverse`), returns the street address or `null`. Only results with `place_rank >= 26` (street level or more specific) are accepted.
+**Reverse geocoding**: `geocoding.ts` exports `reverseGeocode(lat, lon)`, which calls Nominatim (`https://nominatim.openstreetmap.org/reverse`) and returns the street address or `null`. Only results with `place_rank >= 26` (street level or more specific) are accepted.
 
 ### `sidebar.ts` — Sidebar Panel
 
@@ -190,7 +190,7 @@ Separates measurement types for independent metric/imperial toggling:
 - `speed`: km/h vs mph
 - `altitude`: m vs ft
 
-Each has conversion helpers (`kmToMi`, `kmhToMph`, `mToFt`, etc.) and formatters (`formatDistance`, `formatSpeed`, `formatAltitude`). Default is metric; the overlay always uses imperial via `IMPERIAL_UNITS`.
+Each has conversion helpers (`kmToMi`, `kmhToMph`, `mToFt`, etc.) and formatters (`formatDistance`, `formatDistanceKm`, `formatSpeed`, `formatAltitude`). Default is metric; the overlay always uses imperial via `IMPERIAL_UNITS`.
 
 ### `geo.ts` — Coordinate Utilities
 
@@ -198,7 +198,6 @@ Each has conversion helpers (`kmToMi`, `kmhToMph`, `mToFt`, etc.) and formatters
 - `LatLon` type: `[lat, lon]` tuple
 - `haversineMeters(from, to)`: Haversine distance between two `LonLat` points
 - `distanceMeters(a, b)`: Distance between two `LatLonLocation` objects
-- `formatDistanceKm(km)`: Simple km/m formatting
 
 ### `style.css`
 

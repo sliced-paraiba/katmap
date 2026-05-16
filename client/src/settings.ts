@@ -46,38 +46,38 @@ export class SettingsPopup {
 
     this.card.innerHTML = `
       <div class="settings-header">
-        <h2>Settings</h2>
-        <button class="settings-close" title="Close">&times;</button>
+        <h2>${strings.settings.heading}</h2>
+        <button class="settings-close" title="${strings.settings.close}">&times;</button>
       </div>
 
       <div class="settings-section">
-        <h3>Map Theme</h3>
+        <h3>${strings.settings.mapTheme}</h3>
         <select class="settings-theme-select">
           ${THEMES.map(t => `<option value="${t}" ${t === currentTheme ? "selected" : ""}>${strings.themes[t as keyof typeof strings.themes]}</option>`).join("")}
         </select>
       </div>
 
       <div class="settings-section">
-        <h3>Units</h3>
+        <h3>${strings.settings.units}</h3>
         <div class="settings-unit-row">
-          <span class="settings-unit-label">Distance</span>
+          <span class="settings-unit-label">${strings.settings.distance}</span>
           <div class="settings-unit-toggle" data-unit="distance">
-            <button class="unit-opt ${units.distance === "metric" ? "active" : ""}" data-value="metric">km / m</button>
-            <button class="unit-opt ${units.distance === "imperial" ? "active" : ""}" data-value="imperial">mi / ft</button>
+            <button class="unit-opt ${units.distance === "metric" ? "active" : ""}" data-value="metric">${strings.settings.distanceMetric}</button>
+            <button class="unit-opt ${units.distance === "imperial" ? "active" : ""}" data-value="imperial">${strings.settings.distanceImperial}</button>
           </div>
         </div>
         <div class="settings-unit-row">
-          <span class="settings-unit-label">Speed</span>
+          <span class="settings-unit-label">${strings.settings.speed}</span>
           <div class="settings-unit-toggle" data-unit="speed">
-            <button class="unit-opt ${units.speed === "metric" ? "active" : ""}" data-value="metric">km/h</button>
-            <button class="unit-opt ${units.speed === "imperial" ? "active" : ""}" data-value="imperial">mph</button>
+            <button class="unit-opt ${units.speed === "metric" ? "active" : ""}" data-value="metric">${strings.settings.speedMetric}</button>
+            <button class="unit-opt ${units.speed === "imperial" ? "active" : ""}" data-value="imperial">${strings.settings.speedImperial}</button>
           </div>
         </div>
         <div class="settings-unit-row">
-          <span class="settings-unit-label">Altitude</span>
+          <span class="settings-unit-label">${strings.settings.altitude}</span>
           <div class="settings-unit-toggle" data-unit="altitude">
-            <button class="unit-opt ${units.altitude === "metric" ? "active" : ""}" data-value="metric">m</button>
-            <button class="unit-opt ${units.altitude === "imperial" ? "active" : ""}" data-value="imperial">ft</button>
+            <button class="unit-opt ${units.altitude === "metric" ? "active" : ""}" data-value="metric">${strings.settings.altitudeMetric}</button>
+            <button class="unit-opt ${units.altitude === "imperial" ? "active" : ""}" data-value="imperial">${strings.settings.altitudeImperial}</button>
           </div>
         </div>
       </div>

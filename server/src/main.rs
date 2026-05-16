@@ -3,6 +3,7 @@ mod companion;
 mod debug;
 #[cfg(test)]
 mod domain_tests;
+mod geo;
 mod history;
 mod poi;
 mod resolve;

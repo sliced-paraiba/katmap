@@ -212,7 +212,7 @@ fn build_poi(query: &PoiQuery, el: OverpassElement) -> Option<PoiResult> {
 
     let name = first_tag(&el.tags, &["name", "brand", "operator"]);
     let category = category_label(&el.tags);
-    let distance_m = haversine_m(query.lat, query.lon, lat, lon);
+    let distance_m = crate::geo::haversine_m(query.lat, query.lon, lat, lon);
     let address = address(&el.tags);
     let google_maps_url = google_maps_url(name.as_deref(), lat, lon);
 
@@ -362,14 +362,4 @@ fn name_score(name: Option<&str>, preferred: Option<&str>) -> i32 {
     } else {
         0
     }
-}
-
-fn haversine_m(lat1: f64, lon1: f64, lat2: f64, lon2: f64) -> f64 {
-    let r = 6_371_000.0;
-    let dlat = (lat2 - lat1).to_radians();
-    let dlon = (lon2 - lon1).to_radians();
-    let lat1 = lat1.to_radians();
-    let lat2 = lat2.to_radians();
-    let a = (dlat / 2.0).sin().powi(2) + lat1.cos() * lat2.cos() * (dlon / 2.0).sin().powi(2);
-    2.0 * r * a.sqrt().asin()
 }

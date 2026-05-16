@@ -1,10 +1,12 @@
 import { Connection } from "./net";
 import { AppState } from "./state";
-import { MapView, reverseGeocode } from "./map";
+import { MapView } from "./map";
 import { Theme, isTheme } from "./themes";
 import { Sidebar } from "./sidebar";
 import { SettingsPopup } from "./settings";
 import { strings } from "./strings";
+import { reverseGeocode } from "./geocoding";
+import { showActionToast, showToast } from "./toast";
 
 const state = new AppState();
 
@@ -65,7 +67,7 @@ const sidebar = new Sidebar(
   state,
   send,
   () => mapView.enterPinMode(async (lat, lon) => {
-    const label = (await reverseGeocode(lat, lon)) ?? `Stop ${state.waypoints.length + 1}`;
+    const label = (await reverseGeocode(lat, lon)) ?? strings.map.fallbackStopLabel(state.waypoints.length + 1);
     send({ type: "add_waypoint", lat, lon, label });
   }),
   () => mapView.exitPinMode()
@@ -272,39 +274,12 @@ drawFallbackFavicon();
   }
 })();
 
-// --- Toast system ---
-const toastContainer = document.createElement("div");
-toastContainer.id = "toast-container";
-document.body.appendChild(toastContainer);
-
-let hideTimeout: ReturnType<typeof setTimeout> | null = null;
-let updateToastVisible = false;
-
-function showToast(message: string, type: "error" | "success" | "info" = "info") {
-  if (updateToastVisible) return;
-  if (hideTimeout) clearTimeout(hideTimeout);
-
-  toastContainer.textContent = message;
-  toastContainer.className = `toast toast-${type} toast-visible`;
-
-  const duration = type === "error" ? 5000 : 2000;
-  hideTimeout = setTimeout(() => {
-    toastContainer.classList.remove("toast-visible");
-  }, duration);
-}
-
 function showUpdateToast() {
-  updateToastVisible = true;
-  if (hideTimeout) clearTimeout(hideTimeout);
-
-  toastContainer.className = "toast toast-info toast-update toast-visible";
-  toastContainer.innerHTML = `
-    <span>${strings.toast.updateAvailable}</span>
-    <button type="button" class="toast-reload-btn">${strings.toast.reload}</button>
-  `;
-  toastContainer
-    .querySelector<HTMLButtonElement>(".toast-reload-btn")
-    ?.addEventListener("click", () => window.location.reload());
+  showActionToast({
+    message: strings.toast.updateAvailable,
+    actionLabel: strings.toast.reload,
+    onAction: () => window.location.reload(),
+  });
 }
 
 function sameVersion(a: VersionInfo, b: VersionInfo): boolean {
