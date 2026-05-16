@@ -375,19 +375,12 @@ async fn maybe_auto_complete_first_waypoint(state: &AppState, lat: f64, lon: f64
         return;
     }
 
-    let mut wps = state.waypoints.write().await;
-    if let Some(idx) = wps.iter().position(|w| w.id == first.id && w.active) {
-        crate::ws::push_undo(&state.undo_stack, &wps).await;
-        let completed_label = wps[idx].label.clone();
-        wps[idx].active = false;
+    if let Some(completed_label) = state.waypoint_store().auto_complete_active(first.id).await {
         tracing::info!(
             "auto-completed waypoint '{}' ({:.1}m away); marked inactive",
             completed_label,
             distance_m
         );
-        let _ = state.tx.send(crate::types::ServerMessage::WaypointList {
-            waypoints: wps.clone(),
-        });
     }
     *state.auto_complete_candidate.lock().await = None;
 }

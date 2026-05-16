@@ -5,7 +5,9 @@ mod tests {
     use crate::companion::TrailAccumulator;
     use crate::history::{TrailEdits, apply_trail_edits};
     use crate::types::{BreadcrumbPoint, Waypoint};
-    use crate::ws::remaining_waypoints_for_live_route;
+    use crate::ws::{UndoStack, WaypointState, WaypointStore, remaining_waypoints_for_live_route};
+    use std::sync::Arc;
+    use tokio::sync::{RwLock, broadcast};
     use uuid::Uuid;
 
     fn point(timestamp_ms: i64, lon: f64, lat: f64) -> BreadcrumbPoint {
@@ -29,6 +31,17 @@ mod tests {
             label: label.to_string(),
             active: true,
         }
+    }
+
+    fn waypoint_store() -> (WaypointStore, WaypointState, UndoStack) {
+        let waypoints = Arc::new(RwLock::new(Vec::new()));
+        let undo_stack = Arc::new(RwLock::new(Vec::new()));
+        let (tx, _) = broadcast::channel(16);
+        (
+            WaypointStore::new(waypoints.clone(), undo_stack.clone(), tx),
+            waypoints,
+            undo_stack,
+        )
     }
 
     #[test]
@@ -79,7 +92,13 @@ mod tests {
 
         let remaining = remaining_waypoints_for_live_route(47.0, -122.002, &waypoints);
 
-        assert_eq!(remaining.iter().map(|w| w.label.as_str()).collect::<Vec<_>>(), vec!["1", "2", "3"]);
+        assert_eq!(
+            remaining
+                .iter()
+                .map(|w| w.label.as_str())
+                .collect::<Vec<_>>(),
+            vec!["1", "2", "3"]
+        );
     }
 
     #[test]
@@ -92,19 +111,28 @@ mod tests {
 
         let remaining = remaining_waypoints_for_live_route(47.0, -121.995, &waypoints);
 
-        assert_eq!(remaining.iter().map(|w| w.label.as_str()).collect::<Vec<_>>(), vec!["2", "3"]);
+        assert_eq!(
+            remaining
+                .iter()
+                .map(|w| w.label.as_str())
+                .collect::<Vec<_>>(),
+            vec!["2", "3"]
+        );
     }
 
     #[test]
     fn live_route_suffix_at_end_of_two_point_route_targets_only_end() {
-        let waypoints = vec![
-            waypoint("1", 47.0, -122.0),
-            waypoint("2", 47.0, -121.99),
-        ];
+        let waypoints = vec![waypoint("1", 47.0, -122.0), waypoint("2", 47.0, -121.99)];
 
         let remaining = remaining_waypoints_for_live_route(47.0, -121.99, &waypoints);
 
-        assert_eq!(remaining.iter().map(|w| w.label.as_str()).collect::<Vec<_>>(), vec!["2"]);
+        assert_eq!(
+            remaining
+                .iter()
+                .map(|w| w.label.as_str())
+                .collect::<Vec<_>>(),
+            vec!["2"]
+        );
     }
 
     #[test]
@@ -170,5 +198,72 @@ mod tests {
         };
 
         assert_eq!(apply_trail_edits(&points, &edits), points);
+    }
+
+    #[tokio::test]
+    async fn waypoint_store_add_then_undo_restores_empty_list() {
+        let (store, waypoints, undo_stack) = waypoint_store();
+
+        store.add(47.0, -122.0, "Stop 1".to_string()).await;
+        assert_eq!(waypoints.read().await.len(), 1);
+        assert_eq!(undo_stack.read().await.len(), 1);
+
+        store.undo().await;
+        assert!(waypoints.read().await.is_empty());
+        assert!(undo_stack.read().await.is_empty());
+    }
+
+    #[tokio::test]
+    async fn waypoint_store_rename_and_set_active_are_undoable() {
+        let (store, waypoints, _) = waypoint_store();
+
+        store.add(47.0, -122.0, "Stop 1".to_string()).await;
+        let id = waypoints.read().await[0].id;
+
+        store.rename(id, "Renamed".to_string()).await;
+        assert_eq!(waypoints.read().await[0].label.as_str(), "Renamed");
+        store.undo().await;
+        assert_eq!(waypoints.read().await[0].label.as_str(), "Stop 1");
+
+        store.set_active(id, false).await;
+        assert!(!waypoints.read().await[0].active);
+        store.undo().await;
+        assert!(waypoints.read().await[0].active);
+    }
+
+    #[tokio::test]
+    async fn waypoint_store_delete_all_empty_does_not_push_undo() {
+        let (store, _, undo_stack) = waypoint_store();
+
+        store.delete_all().await;
+
+        assert!(undo_stack.read().await.is_empty());
+    }
+
+    #[tokio::test]
+    async fn waypoint_store_reorder_appends_omitted_waypoints() {
+        let (store, waypoints, _) = waypoint_store();
+
+        store.add(47.0, -122.0, "A".to_string()).await;
+        store.add(47.1, -122.1, "B".to_string()).await;
+        store.add(47.2, -122.2, "C".to_string()).await;
+        let ids = waypoints
+            .read()
+            .await
+            .iter()
+            .map(|w| w.id)
+            .collect::<Vec<_>>();
+
+        store.reorder(vec![ids[2], ids[0]]).await;
+
+        assert_eq!(
+            waypoints
+                .read()
+                .await
+                .iter()
+                .map(|w| w.label.as_str().to_string())
+                .collect::<Vec<_>>(),
+            vec!["C", "A", "B"]
+        );
     }
 }

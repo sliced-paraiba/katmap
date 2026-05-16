@@ -9,8 +9,8 @@ use axum::{
     },
     response::IntoResponse,
 };
-use std::collections::HashMap;
 use futures_util::{SinkExt, StreamExt};
+use std::collections::{HashMap, HashSet};
 use tokio::sync::{Mutex, RwLock, broadcast};
 use uuid::Uuid;
 
@@ -46,6 +46,183 @@ pub struct AutoCompleteCandidate {
 /// Maximum number of undo entries kept in memory.
 const UNDO_STACK_MAX: usize = 50;
 
+#[derive(Clone)]
+pub struct WaypointStore {
+    waypoints: WaypointState,
+    undo_stack: UndoStack,
+    tx: broadcast::Sender<ServerMessage>,
+}
+
+impl WaypointStore {
+    pub fn new(
+        waypoints: WaypointState,
+        undo_stack: UndoStack,
+        tx: broadcast::Sender<ServerMessage>,
+    ) -> Self {
+        Self {
+            waypoints,
+            undo_stack,
+            tx,
+        }
+    }
+
+    pub async fn active_waypoints(&self) -> Vec<Waypoint> {
+        self.waypoints
+            .read()
+            .await
+            .iter()
+            .filter(|w| w.active)
+            .cloned()
+            .collect()
+    }
+
+    pub async fn add(&self, lat: f64, lon: f64, label: String) {
+        self.mutate_with_undo(|wps| {
+            wps.push(Waypoint {
+                id: Uuid::new_v4(),
+                lat,
+                lon,
+                label,
+                active: true,
+            });
+        })
+        .await;
+    }
+
+    pub async fn remove(&self, id: Uuid) {
+        self.mutate_with_undo(|wps| {
+            wps.retain(|w| w.id != id);
+        })
+        .await;
+    }
+
+    pub async fn move_waypoint(&self, id: Uuid, lat: f64, lon: f64) {
+        self.mutate_with_undo(|wps| {
+            if let Some(w) = wps.iter_mut().find(|w| w.id == id) {
+                w.lat = lat;
+                w.lon = lon;
+            }
+        })
+        .await;
+    }
+
+    pub async fn rename(&self, id: Uuid, label: String) {
+        self.mutate_with_undo(|wps| {
+            if let Some(w) = wps.iter_mut().find(|w| w.id == id) {
+                w.label = label;
+            }
+        })
+        .await;
+    }
+
+    pub async fn set_active(&self, id: Uuid, active: bool) {
+        self.mutate_with_undo(|wps| {
+            if let Some(w) = wps.iter_mut().find(|w| w.id == id) {
+                w.active = active;
+            }
+        })
+        .await;
+    }
+
+    pub async fn reorder(&self, ordered_ids: Vec<Uuid>) {
+        self.mutate_with_undo(|wps| {
+            let ordered_set: HashSet<Uuid> = ordered_ids.iter().copied().collect();
+            let mut reordered = Vec::with_capacity(wps.len());
+            for id in &ordered_ids {
+                if let Some(w) = wps.iter().find(|w| w.id == *id) {
+                    reordered.push(w.clone());
+                }
+            }
+            for w in wps.iter() {
+                if !ordered_set.contains(&w.id) {
+                    reordered.push(w.clone());
+                }
+            }
+            *wps = reordered;
+        })
+        .await;
+    }
+
+    pub async fn delete_all(&self) {
+        self.mutate_with_undo_if(|wps| {
+            if wps.is_empty() {
+                return false;
+            }
+            wps.clear();
+            true
+        })
+        .await;
+    }
+
+    pub async fn undo(&self) {
+        let mut stack = self.undo_stack.write().await;
+        let Some(prev) = stack.pop() else {
+            tracing::debug!("Undo: stack is empty");
+            return;
+        };
+
+        tracing::info!("Undo: restoring {} waypoints", prev.len());
+        let mut wps = self.waypoints.write().await;
+        *wps = prev;
+        let waypoints = wps.clone();
+        drop(wps);
+        drop(stack);
+        self.broadcast(waypoints);
+    }
+
+    pub async fn auto_complete_active(&self, id: Uuid) -> Option<String> {
+        let mut completed_label = None;
+        let changed = self
+            .mutate_with_undo_if(|wps| {
+                let Some(w) = wps.iter_mut().find(|w| w.id == id && w.active) else {
+                    return false;
+                };
+                completed_label = Some(w.label.clone());
+                w.active = false;
+                true
+            })
+            .await;
+
+        changed.then_some(completed_label).flatten()
+    }
+
+    async fn mutate_with_undo<F>(&self, f: F)
+    where
+        F: FnOnce(&mut Vec<Waypoint>),
+    {
+        self.mutate_with_undo_if(|wps| {
+            f(wps);
+            true
+        })
+        .await;
+    }
+
+    async fn mutate_with_undo_if<F>(&self, f: F) -> bool
+    where
+        F: FnOnce(&mut Vec<Waypoint>) -> bool,
+    {
+        // All mutation and undo paths lock in this order.
+        let mut stack = self.undo_stack.write().await;
+        let mut wps = self.waypoints.write().await;
+        let snapshot = wps.clone();
+
+        if !f(&mut wps) {
+            return false;
+        }
+
+        push_undo_snapshot(&mut stack, snapshot);
+        let waypoints = wps.clone();
+        drop(wps);
+        drop(stack);
+        self.broadcast(waypoints);
+        true
+    }
+
+    fn broadcast(&self, waypoints: Vec<Waypoint>) {
+        let _ = self.tx.send(ServerMessage::WaypointList { waypoints });
+    }
+}
+
 #[derive(Clone, Default)]
 pub struct SocialLinks {
     pub discord: Option<String>,
@@ -75,13 +252,36 @@ pub struct AppState {
     pub auto_complete_candidate: Arc<Mutex<Option<AutoCompleteCandidate>>>,
 }
 
+impl AppState {
+    pub fn waypoint_store(&self) -> WaypointStore {
+        WaypointStore::new(
+            self.waypoints.clone(),
+            self.undo_stack.clone(),
+            self.tx.clone(),
+        )
+    }
+}
+
 pub async fn ws_handler(
     ws: WebSocketUpgrade,
     State(state): State<AppState>,
     Query(params): Query<HashMap<String, String>>,
 ) -> impl IntoResponse {
-    let counts_as_viewer = params.get("client").is_none_or(|client| client != "overlay");
+    let counts_as_viewer = counts_as_viewer(&params);
     ws.on_upgrade(move |socket| handle_socket(socket, state, counts_as_viewer))
+}
+
+fn counts_as_viewer(params: &HashMap<String, String>) -> bool {
+    match params.get("viewer").map(String::as_str) {
+        Some("0" | "false" | "FALSE" | "False" | "no" | "NO" | "No") => return false,
+        Some("1" | "true" | "TRUE" | "True" | "yes" | "YES" | "Yes") => return true,
+        _ => {}
+    }
+
+    !matches!(
+        params.get("client").map(String::as_str),
+        Some("overlay" | "weather-overlay")
+    )
 }
 
 async fn handle_socket(socket: WebSocket, state: AppState, counts_as_viewer: bool) {
@@ -169,8 +369,7 @@ async fn handle_socket(socket: WebSocket, state: AppState, counts_as_viewer: boo
 
     // Task: receive messages from this client and process them
     let tx = state.tx.clone();
-    let waypoints = state.waypoints.clone();
-    let undo_stack = state.undo_stack.clone();
+    let waypoint_store = state.waypoint_store();
     let valhalla_url = state.valhalla_url.clone();
     let walking_speed_kmh = state.walking_speed_kmh;
     let live_location = state.live_location.clone();
@@ -178,8 +377,15 @@ async fn handle_socket(socket: WebSocket, state: AppState, counts_as_viewer: boo
         while let Some(Ok(msg)) = stream.next().await {
             match msg {
                 Message::Text(text) => {
-                    if let Err(e) =
-                        handle_client_message(&text, &waypoints, &undo_stack, &tx, &valhalla_url, walking_speed_kmh, &live_location).await
+                    if let Err(e) = handle_client_message(
+                        &text,
+                        &waypoint_store,
+                        &tx,
+                        &valhalla_url,
+                        walking_speed_kmh,
+                        &live_location,
+                    )
+                    .await
                     {
                         tracing::warn!("Error handling client message: {e}");
                         let _ = tx.send(ServerMessage::Error {
@@ -205,16 +411,13 @@ async fn handle_socket(socket: WebSocket, state: AppState, counts_as_viewer: boo
         let _ = state.tx.send(ServerMessage::UserCount { count });
     } else {
         let count = state.connected_count.load(Ordering::Relaxed);
-        tracing::info!(
-            "Overlay WebSocket connection closed ({count} counted viewers unchanged)"
-        );
+        tracing::info!("Overlay WebSocket connection closed ({count} counted viewers unchanged)");
     }
 }
 
 async fn handle_client_message(
     text: &str,
-    waypoints: &WaypointState,
-    undo_stack: &UndoStack,
+    waypoint_store: &WaypointStore,
     tx: &broadcast::Sender<ServerMessage>,
     valhalla_url: &str,
     walking_speed_kmh: f64,
@@ -224,109 +427,31 @@ async fn handle_client_message(
 
     match client_msg {
         ClientMessage::AddWaypoint { lat, lon, label } => {
-            let mut wps = waypoints.write().await;
-            push_undo(undo_stack, &wps).await;
-            wps.push(Waypoint {
-                id: Uuid::new_v4(),
-                lat,
-                lon,
-                label,
-                active: true,
-            });
-            let _ = tx.send(ServerMessage::WaypointList {
-                waypoints: wps.clone(),
-            });
+            waypoint_store.add(lat, lon, label).await;
         }
         ClientMessage::RemoveWaypoint { id } => {
-            let mut wps = waypoints.write().await;
-            push_undo(undo_stack, &wps).await;
-            wps.retain(|w| w.id != id);
-            let _ = tx.send(ServerMessage::WaypointList {
-                waypoints: wps.clone(),
-            });
+            waypoint_store.remove(id).await;
         }
         ClientMessage::MoveWaypoint { id, lat, lon } => {
-            let mut wps = waypoints.write().await;
-            push_undo(undo_stack, &wps).await;
-            if let Some(w) = wps.iter_mut().find(|w| w.id == id) {
-                w.lat = lat;
-                w.lon = lon;
-            }
-            let _ = tx.send(ServerMessage::WaypointList {
-                waypoints: wps.clone(),
-            });
+            waypoint_store.move_waypoint(id, lat, lon).await;
         }
         ClientMessage::RenameWaypoint { id, label } => {
-            let mut wps = waypoints.write().await;
-            push_undo(undo_stack, &wps).await;
-            if let Some(w) = wps.iter_mut().find(|w| w.id == id) {
-                w.label = label;
-            }
-            let _ = tx.send(ServerMessage::WaypointList {
-                waypoints: wps.clone(),
-            });
+            waypoint_store.rename(id, label).await;
         }
         ClientMessage::SetWaypointActive { id, active } => {
-            let mut wps = waypoints.write().await;
-            push_undo(undo_stack, &wps).await;
-            if let Some(w) = wps.iter_mut().find(|w| w.id == id) {
-                w.active = active;
-            }
-            let _ = tx.send(ServerMessage::WaypointList {
-                waypoints: wps.clone(),
-            });
+            waypoint_store.set_active(id, active).await;
         }
         ClientMessage::ReorderWaypoints { ordered_ids } => {
-            let mut wps = waypoints.write().await;
-            push_undo(undo_stack, &wps).await;
-            let mut reordered = Vec::with_capacity(ordered_ids.len());
-            for id in &ordered_ids {
-                if let Some(w) = wps.iter().find(|w| &w.id == id) {
-                    reordered.push(w.clone());
-                }
-            }
-            for w in wps.iter() {
-                if !ordered_ids.contains(&w.id) {
-                    reordered.push(w.clone());
-                }
-            }
-            *wps = reordered;
-            let _ = tx.send(ServerMessage::WaypointList {
-                waypoints: wps.clone(),
-            });
+            waypoint_store.reorder(ordered_ids).await;
         }
         ClientMessage::DeleteAll => {
-            let mut wps = waypoints.write().await;
-            if wps.is_empty() {
-                return Ok(());
-            }
-            push_undo(undo_stack, &wps).await;
-            wps.clear();
-            let _ = tx.send(ServerMessage::WaypointList {
-                waypoints: wps.clone(),
-            });
+            waypoint_store.delete_all().await;
         }
         ClientMessage::Undo => {
-            let mut stack = undo_stack.write().await;
-            if let Some(prev) = stack.pop() {
-                tracing::info!("Undo: restoring {} waypoints", prev.len());
-                let mut wps = waypoints.write().await;
-                *wps = prev;
-                let _ = tx.send(ServerMessage::WaypointList {
-                    waypoints: wps.clone(),
-                });
-            } else {
-                tracing::debug!("Undo: stack is empty");
-            }
+            waypoint_store.undo().await;
         }
         ClientMessage::RequestRoute => {
-            let wps: Vec<_> = waypoints
-                .read()
-                .await
-                .iter()
-                .filter(|w| w.active)
-                .cloned()
-                .collect();
+            let wps = waypoint_store.active_waypoints().await;
             if wps.len() < 2 {
                 return Ok(());
             }
@@ -361,13 +486,7 @@ async fn handle_client_message(
             let speed_kmh = loc.speed.map(|s| s * 3.6).unwrap_or(walking_speed_kmh);
             drop(loc);
 
-            let wps: Vec<_> = waypoints
-                .read()
-                .await
-                .iter()
-                .filter(|w| w.active)
-                .cloned()
-                .collect();
+            let wps = waypoint_store.active_waypoints().await;
             if wps.is_empty() {
                 return Ok(());
             }
@@ -392,7 +511,13 @@ async fn handle_client_message(
             let tx = tx.clone();
             let url = valhalla_url.to_string();
             tokio::spawn(async move {
-                tracing::info!("Calculating live route from ({}, {}) through {} remaining waypoints at {:.1} km/h", origin_lat, origin_lon, remaining_count, speed_kmh);
+                tracing::info!(
+                    "Calculating live route from ({}, {}) through {} remaining waypoints at {:.1} km/h",
+                    origin_lat,
+                    origin_lon,
+                    remaining_count,
+                    speed_kmh
+                );
                 match crate::valhalla::calculate_route(&live_wps, &url, speed_kmh).await {
                     Ok(result) => {
                         let _ = tx.send(ServerMessage::LiveRouteResult {
@@ -484,10 +609,8 @@ fn project_point_to_segment_m(
     (t, (dx * dx + dy * dy).sqrt())
 }
 
-/// Push a snapshot of the current waypoints onto the undo stack, capping at UNDO_STACK_MAX.
-pub(crate) async fn push_undo(undo_stack: &UndoStack, current: &[Waypoint]) {
-    let mut stack = undo_stack.write().await;
-    stack.push(current.to_vec());
+fn push_undo_snapshot(stack: &mut Vec<Vec<Waypoint>>, current: Vec<Waypoint>) {
+    stack.push(current);
     if stack.len() > UNDO_STACK_MAX {
         stack.remove(0);
     }
