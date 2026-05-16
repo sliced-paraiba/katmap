@@ -89,8 +89,8 @@ fn cmd_list(args: &[String], conn: &Connection) {
     }
 
     println!(
-        "{:<5} {:<5} {:<5} {:<22} {:<10} {}",
-        "ID", "Hidden", "Pts", "Started", "Duration", "Name"
+        "{:<5} {:<5} {:<5} {:<22} {:<10} Name",
+        "ID", "Hidden", "Pts", "Started", "Duration"
     );
     println!("{}", "─".repeat(72));
 

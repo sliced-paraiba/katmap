@@ -117,10 +117,10 @@ pub async fn poi_handler(
 
     let key = cache_key(&query);
     let now = Instant::now();
-    if let Some(entry) = state.poi_cache.read().await.get(&key) {
-        if entry.expires_at > now {
-            return Json(entry.response.clone()).into_response();
-        }
+    if let Some(entry) = state.poi_cache.read().await.get(&key)
+        && entry.expires_at > now
+    {
+        return Json(entry.response.clone()).into_response();
     }
 
     let response = match fetch_pois(&query).await {

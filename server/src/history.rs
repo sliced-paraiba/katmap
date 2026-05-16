@@ -523,15 +523,15 @@ pub async fn admin_update_history_handler(
     };
     let guard = history.db.lock().await;
     let repo = HistoryRepo::new(&guard);
-    if let Some(session_id) = update.session_id {
-        if let Err(e) = repo.update_session_id(id, session_id.as_deref()) {
-            return (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response();
-        }
+    if let Some(session_id) = update.session_id
+        && let Err(e) = repo.update_session_id(id, session_id.as_deref())
+    {
+        return (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response();
     }
-    if let Some(hidden) = update.hidden {
-        if let Err(e) = repo.set_hidden(id, hidden) {
-            return (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response();
-        }
+    if let Some(hidden) = update.hidden
+        && let Err(e) = repo.set_hidden(id, hidden)
+    {
+        return (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response();
     }
     (StatusCode::OK, "Updated").into_response()
 }

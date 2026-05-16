@@ -103,7 +103,7 @@ impl TrailAccumulator {
         let was_tail = self
             .points
             .last()
-            .map_or(true, |last| ts >= last.timestamp_ms);
+            .is_none_or(|last| ts >= last.timestamp_ms);
 
         self.points.push(point);
         self.points.sort_by_key(|p| p.timestamp_ms);
@@ -234,33 +234,33 @@ pub async fn location_handler(
             // Upsert to SQLite on every location packet. This makes deploys,
             // process crashes, and restarts mid-stream safe: the incomplete row
             // is always close to the in-memory trail and can be resumed on boot.
-            if let Some(snapshot) = persist_snapshot {
-                if let Some(history) = &state.history {
-                    let streamer_id = state.display_name.clone();
-                    let session_name = snapshot.session_name.clone();
-                    let started_at = snapshot.started_at;
-                    let coords_clone = snapshot.coords();
-                    let telemetry_json = serde_json::to_string(&snapshot.points).ok();
+            if let Some(snapshot) = persist_snapshot
+                && let Some(history) = &state.history
+            {
+                let streamer_id = state.display_name.clone();
+                let session_name = snapshot.session_name.clone();
+                let started_at = snapshot.started_at;
+                let coords_clone = snapshot.coords();
+                let telemetry_json = serde_json::to_string(&snapshot.points).ok();
 
-                    match upsert_incomplete_trail(
-                        history,
-                        &streamer_id,
-                        "companion",
-                        started_at,
-                        &session_name,
-                        &coords_clone,
-                        telemetry_json.as_deref(),
-                    )
-                    .await
-                    {
-                        Ok(id) => {
-                            let mut trail = state.trail.lock().await;
-                            if trail.session_active && trail.incomplete_trail_id.is_none() {
-                                trail.incomplete_trail_id = Some(id);
-                            }
+                match upsert_incomplete_trail(
+                    history,
+                    &streamer_id,
+                    "companion",
+                    started_at,
+                    &session_name,
+                    &coords_clone,
+                    telemetry_json.as_deref(),
+                )
+                .await
+                {
+                    Ok(id) => {
+                        let mut trail = state.trail.lock().await;
+                        if trail.session_active && trail.incomplete_trail_id.is_none() {
+                            trail.incomplete_trail_id = Some(id);
                         }
-                        Err(e) => tracing::warn!("companion: failed to upsert trail: {}", e),
                     }
+                    Err(e) => tracing::warn!("companion: failed to upsert trail: {}", e),
                 }
             }
 
@@ -466,28 +466,29 @@ pub async fn save_on_shutdown(state: &AppState) {
     let snapshot = trail.clone();
     drop(trail);
 
-    if snapshot.session_active && !snapshot.points.is_empty() {
-        if let Some(history) = &state.history {
-            let coords = snapshot.coords();
-            let telemetry_json = serde_json::to_string(&snapshot.points).ok();
-            match upsert_incomplete_trail(
-                history,
-                &state.display_name,
-                "companion",
-                snapshot.started_at,
-                &snapshot.session_name,
-                &coords,
-                telemetry_json.as_deref(),
-            )
-            .await
-            {
-                Ok(id) => tracing::info!(
-                    "companion: persisted incomplete trail id={} on shutdown ({} coords)",
-                    id,
-                    coords.len()
-                ),
-                Err(e) => tracing::warn!("companion: failed to persist trail on shutdown: {}", e),
-            }
+    if snapshot.session_active
+        && !snapshot.points.is_empty()
+        && let Some(history) = &state.history
+    {
+        let coords = snapshot.coords();
+        let telemetry_json = serde_json::to_string(&snapshot.points).ok();
+        match upsert_incomplete_trail(
+            history,
+            &state.display_name,
+            "companion",
+            snapshot.started_at,
+            &snapshot.session_name,
+            &coords,
+            telemetry_json.as_deref(),
+        )
+        .await
+        {
+            Ok(id) => tracing::info!(
+                "companion: persisted incomplete trail id={} on shutdown ({} coords)",
+                id,
+                coords.len()
+            ),
+            Err(e) => tracing::warn!("companion: failed to persist trail on shutdown: {}", e),
         }
     }
 }

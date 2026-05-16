@@ -300,13 +300,13 @@ async fn handle_socket(socket: WebSocket, state: AppState, counts_as_viewer: boo
     {
         let waypoints = state.waypoints.read().await.clone();
         let msg = ServerMessage::WaypointList { waypoints };
-        if let Ok(json) = serde_json::to_string(&msg) {
-            if sink.send(Message::Text(json.into())).await.is_err() {
-                if counts_as_viewer {
-                    state.connected_count.fetch_sub(1, Ordering::Relaxed);
-                }
-                return;
+        if let Ok(json) = serde_json::to_string(&msg)
+            && sink.send(Message::Text(json.into())).await.is_err()
+        {
+            if counts_as_viewer {
+                state.connected_count.fetch_sub(1, Ordering::Relaxed);
             }
+            return;
         }
     }
 
@@ -359,10 +359,10 @@ async fn handle_socket(socket: WebSocket, state: AppState, counts_as_viewer: boo
     // Task: forward broadcast messages to this client's WebSocket
     let mut send_task = tokio::spawn(async move {
         while let Ok(msg) = rx.recv().await {
-            if let Ok(json) = serde_json::to_string(&msg) {
-                if sink.send(Message::Text(json.into())).await.is_err() {
-                    break;
-                }
+            if let Ok(json) = serde_json::to_string(&msg)
+                && sink.send(Message::Text(json.into())).await.is_err()
+            {
+                break;
             }
         }
     });
