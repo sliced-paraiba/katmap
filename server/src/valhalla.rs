@@ -21,6 +21,12 @@ pub struct RoutePoint {
     pub lon: f64,
 }
 
+#[derive(Clone, Copy)]
+struct ValhallaLocation {
+    lat: f64,
+    lon: f64,
+}
+
 pub struct SimpleManeuver {
     pub instruction: String,
     pub distance_km: f64,
@@ -33,6 +39,19 @@ pub struct PointRouteResult {
     pub distance_km: f64,
     pub duration_min: f64,
     pub maneuvers: Vec<SimpleManeuver>,
+}
+
+struct RawRouteResult {
+    polyline: String,
+    distance_km: f64,
+    duration_min: f64,
+    legs: Vec<RawRouteLeg>,
+}
+
+struct RawRouteLeg {
+    distance_km: f64,
+    duration_min: f64,
+    maneuvers: Vec<Maneuver>,
 }
 
 /// Valhalla route response (subset of fields we care about)
@@ -82,58 +101,68 @@ pub async fn calculate_route(
         return Err("Need at least 2 waypoints to calculate a route".into());
     }
 
-    let locations: Vec<serde_json::Value> = waypoints
+    let locations: Vec<_> = waypoints
         .iter()
-        .map(|wp| {
-            serde_json::json!({
-                "lat": wp.lat,
-                "lon": wp.lon,
-            })
+        .map(|wp| ValhallaLocation {
+            lat: wp.lat,
+            lon: wp.lon,
         })
         .collect();
 
-    let valhalla = fetch_valhalla_route(
+    let raw = calculate_raw_route(
+        &locations,
         valhalla_url,
-        locations,
         Costing::Pedestrian { walking_speed_kmh },
     )
     .await?;
 
+    let legs = raw
+        .legs
+        .into_iter()
+        .enumerate()
+        .map(|(i, leg)| RouteLeg {
+            start_waypoint_id: waypoints[i].id,
+            end_waypoint_id: waypoints[i + 1].id,
+            distance_km: leg.distance_km,
+            duration_min: leg.duration_min,
+            maneuvers: leg.maneuvers,
+        })
+        .collect();
+
+    Ok(RouteResult {
+        polyline: raw.polyline,
+        distance_km: raw.distance_km,
+        duration_min: raw.duration_min,
+        legs,
+    })
+}
+
+async fn calculate_raw_route(
+    locations: &[ValhallaLocation],
+    valhalla_url: &str,
+    costing: Costing,
+) -> Result<RawRouteResult, String> {
+    if locations.len() < 2 {
+        return Err("Need at least 2 locations to calculate a route".into());
+    }
+
+    let valhalla =
+        fetch_valhalla_route(valhalla_url, valhalla_locations(locations), costing).await?;
     let polyline = merged_polyline(&valhalla.trip.legs);
 
-    // Map legs to our RouteLeg type
-    // Track cumulative shape index offset for multi-leg routes
     let mut shape_offset: u32 = 0;
-    let legs: Vec<RouteLeg> = valhalla
+    let legs = valhalla
         .trip
         .legs
         .iter()
-        .enumerate()
-        .map(|(i, leg)| {
-            let start_id = waypoints[i].id;
-            let end_id = waypoints[i + 1].id;
+        .map(|leg| {
             let offset = shape_offset;
-            let maneuvers = leg
-                .maneuvers
-                .iter()
-                .map(|m| Maneuver {
-                    instruction: m.instruction.clone(),
-                    distance_km: m.length,
-                    duration_min: m.time / 60.0,
-                    maneuver_type: m.maneuver_type,
-                    street_names: m.street_names.clone(),
-                    begin_shape_index: m.begin_shape_index + offset,
-                    end_shape_index: m.end_shape_index + offset,
-                })
-                .collect();
-            // For the next leg, offset by this leg's last shape index
-            // (minus 1 because the junction point is shared)
+            let maneuvers = raw_maneuvers(leg, offset);
             if let Some(last_m) = leg.maneuvers.last() {
                 shape_offset += last_m.end_shape_index;
             }
-            RouteLeg {
-                start_waypoint_id: start_id,
-                end_waypoint_id: end_id,
+
+            RawRouteLeg {
                 distance_km: leg.summary.length,
                 duration_min: leg.summary.time / 60.0,
                 maneuvers,
@@ -141,12 +170,39 @@ pub async fn calculate_route(
         })
         .collect();
 
-    Ok(RouteResult {
+    Ok(RawRouteResult {
         polyline,
         distance_km: valhalla.trip.summary.length,
         duration_min: valhalla.trip.summary.time / 60.0,
         legs,
     })
+}
+
+fn valhalla_locations(locations: &[ValhallaLocation]) -> Vec<serde_json::Value> {
+    locations
+        .iter()
+        .map(|location| {
+            serde_json::json!({
+                "lat": location.lat,
+                "lon": location.lon,
+            })
+        })
+        .collect()
+}
+
+fn raw_maneuvers(leg: &ValhallaLeg, shape_offset: u32) -> Vec<Maneuver> {
+    leg.maneuvers
+        .iter()
+        .map(|m| Maneuver {
+            instruction: m.instruction.clone(),
+            distance_km: m.length,
+            duration_min: m.time / 60.0,
+            maneuver_type: m.maneuver_type,
+            street_names: m.street_names.clone(),
+            begin_shape_index: m.begin_shape_index + shape_offset,
+            end_shape_index: m.end_shape_index + shape_offset,
+        })
+        .collect()
 }
 
 pub struct RouteResult {
@@ -165,35 +221,31 @@ pub async fn calculate_point_to_point_route(
         return Err("Need at least 2 points to calculate a route".into());
     }
 
-    let locations: Vec<serde_json::Value> = points
+    let locations: Vec<_> = points
         .iter()
-        .map(|point| {
-            serde_json::json!({
-                "lat": point.lat,
-                "lon": point.lon,
-            })
+        .map(|point| ValhallaLocation {
+            lat: point.lat,
+            lon: point.lon,
         })
         .collect();
 
-    let valhalla = fetch_valhalla_route(valhalla_url, locations, costing).await?;
-    let polyline = merged_polyline(&valhalla.trip.legs);
-    let maneuvers = valhalla
-        .trip
+    let raw = calculate_raw_route(&locations, valhalla_url, costing).await?;
+    let maneuvers = raw
         .legs
-        .iter()
-        .flat_map(|leg| &leg.maneuvers)
+        .into_iter()
+        .flat_map(|leg| leg.maneuvers)
         .map(|m| SimpleManeuver {
             instruction: m.instruction.clone(),
-            distance_km: m.length,
-            duration_min: m.time / 60.0,
+            distance_km: m.distance_km,
+            duration_min: m.duration_min,
             street_names: m.street_names.clone(),
         })
         .collect();
 
     Ok(PointRouteResult {
-        polyline,
-        distance_km: valhalla.trip.summary.length,
-        duration_min: valhalla.trip.summary.time / 60.0,
+        polyline: raw.polyline,
+        distance_km: raw.distance_km,
+        duration_min: raw.duration_min,
         maneuvers,
     })
 }
